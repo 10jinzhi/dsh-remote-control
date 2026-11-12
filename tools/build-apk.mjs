@@ -112,9 +112,10 @@ function run(cmd, args, options = {}) {
 /**
  * 参与编译的 Java 源码。
  *
- * 刻意只挑真正需要的：LZMA SDK 自带的 `LzmaAlone` / `LzmaBench` 是命令行
- * 示例（会读写本地文件），既不该进 APK 也没必要打包；`Z7Test` 是开发机上
- * 的自测入口，同理。
+ * `SevenZip/` 只留 `z7/` 真正用到的那几个类（LZMA 编解码器 + 它的区间编码、
+ * 滑窗依赖 + `ICodeProgress` 接口）。SDK 自带的 `LzmaAlone` / `LzmaBench` /
+ * `CRC` 是命令行示例与基准，会读写本地文件，**不要加回来**。
+ * `Z7Test` 是开发机上的自测入口，同理。
  */
 function javaSources() {
 	const list = [];
@@ -130,7 +131,6 @@ function javaSources() {
 	add(join(APP, 'java', 'SevenZip', 'Compression', 'LZ'));
 	add(join(APP, 'java', 'SevenZip', 'Compression', 'LZMA'));
 	add(join(APP, 'java', 'SevenZip', 'Compression', 'RangeCoder'));
-	list.push(join(APP, 'java', 'SevenZip', 'CRC.java'));
 	list.push(join(APP, 'java', 'SevenZip', 'ICodeProgress.java'));
 	return list;
 }

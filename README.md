@@ -45,7 +45,7 @@ from-desktop/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
 # 方式一：直接放进插件目录
 cp -r packages/dsh-remote-desktop <你的 DSH 插件目录>/
 # 方式二：用打好的 zip
-#   out/dsh-remote-desktop-1.0.52-remote.1.zip
+#   out/dsh-remote-desktop-1.0.0.zip
 ```
 
 重启 DSH，打开 **设置 → DSH 远程控制**，填那 5 项，点 **测试往返**：

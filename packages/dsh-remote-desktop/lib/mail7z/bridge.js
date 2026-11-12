@@ -2,8 +2,8 @@
  * 电脑端桥 —— 把「B2 上的 7z 邮箱」接到本机中继 `127.0.0.1:17890`。
  *
  * ```
- *   in/*.7z   ──7z 解密──►  app/xxx 或原样转发的 RPC  ──HTTP──►  127.0.0.1:17890
- *   out/*.7z  ◄─7z 加密──   应答 / 渲染后的气泡 / 心跳        ◄──SSE──┘
+ *   from-phone/*.7z   ──7z 解密──►  app/xxx 或原样转发的 RPC  ──HTTP──►  127.0.0.1:17890
+ *   from-desktop/*.7z ◄─7z 加密──   应答 / 渲染后的气泡 / 心跳      ◄──SSE──┘
  * ```
  *
  * 中继本身（`lib/index.js`）一行都没改：它仍然只认那个本地 HTTP 服务，
@@ -30,7 +30,6 @@ import { packJson, unpackJson, sevenZipPath } from './sevenz.js';
 import { createApi } from './api.js';
 import { renderEvent } from './render.js';
 
-const RELAY_ORIGIN = 'http://127.0.0.1:17890';
 const RPC_PATH = '/api/dsh-remote/rpc';
 const STREAM_PATH = '/api/dsh-remote/stream';
 
@@ -447,7 +446,7 @@ export class MailBridge {
 }
 
 /** 版本号（与 package.json 对齐，写在日志/心跳里便于对账）。 */
-const VERSION = '1.0.52-remote.1';
+const VERSION = '1.0.0';
 
 /**
  * 单个会话的事件订阅：把 SSE 帧渲染成气泡，攒批后交给桥。

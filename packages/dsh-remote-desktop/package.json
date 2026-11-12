@@ -1,6 +1,6 @@
 {
   "name": "dsh-remote-desktop",
-  "version": "1.0.52-remote.1",
+  "version": "1.0.0",
   "description": "DSH 远程控制（电脑端）：手机 App 经私有云桶里加密的数据包访问本机 DSH 会话 —— 无需配对码、无需隧道、不经第三方服务端。",
   "type": "module",
   "main": "./lib/index.js",

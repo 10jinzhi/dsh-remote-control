@@ -66,7 +66,6 @@
 
 import { createServer } from 'node:http';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, dirname, join, relative, resolve, sep } from 'node:path';
@@ -78,24 +77,15 @@ export const name = 'dsh-remote-desktop';
 /**
  * `sessionController` 提供官方的建会话/发消息/中断命令层；`sessions` 用于
  * SSE 开场补发历史；中继 HTTP 服务由本插件自建（不用 `webServer`，因为
- * `webServer` 挂在 DSH 自己的 Web 端口上，而隧道的 ingress 指向独立端口 17890）。
+ * `webServer` 挂在 DSH 自己的 Web 端口上，而中继要独立占用 17890）。
  *
- * `webServer` 是给**配对界面**用的：客户端半边要能填激活码、看二维码，
- * 那条路走的是 DSH 自己的 Web 端口（与中继端口无关）。
+ * `webServer` 是给**设置页**用的：`/api/dsh-remote` 那条路由挂在 DSH 自己的
+ * Web 端口上，与中继端口无关。
  */
 export const inject = ['sessionController', 'sessions', 'webServer', 'workspaceRegistry'];
 
 /** 中继监听端口（只对本机开放；公网那一截由 B2 上的加密 7z 邮箱承担）。 */
 const RELAY_PORT = 17890;
-
-/**
- * 旧版的配对接口前缀（激活码 / 二维码那套）。
- *
- * 远程控制变体**不再注册**这条路由 —— 配对信息改由 `SETTINGS_ROUTE`
- * （`/api/dsh-remote`）维护。保留常量只是为了「原版与本版的差异」能一眼对上，
- * 导出它不影响任何行为。
- */
-const PAIR_ROUTE = '/api/dsh-remote/pair';
 
 /**
  * 冷会话补洞的**事件条数上限**。
@@ -144,9 +134,6 @@ const STATE_DIR = join(resolveDshHome(), 'dsh-remote');
 
 /** 访问令牌文件。手机端要用同一个令牌才能连上。 */
 const TOKEN_PATH = join(STATE_DIR, 'token.txt');
-
-/** 隧道凭据文件（可选：覆盖内置的隧道令牌）。 */
-const TUNNEL_PATH = join(STATE_DIR, 'tunnel.txt');
 
 /**
  * 远程调用**不许**当成工作区的目录名（相对路径的最后一段，大小写不敏感）。
@@ -238,8 +225,7 @@ const workspaceCreateStamps = [];
  * 于是**任何一个客户都能读其他客户整台电脑的目录、并能以他们的身份发消息**。
  * 客户机还会被挂到别人的域名上，本人毫不知情。
  *
- * 所以凭据一律**本机生成、本机落盘**（`token.txt`），配对成功后由服务器下发的
- * `accessToken` 取代（见 `ensureToken` 的优先级）。包里**不含任何可用凭据**。
+ * 所以凭据一律**本机生成、本机落盘**（`token.txt`），包里**不含任何可用凭据**。
  */
 function generateToken() {
 	return randomBytes(32).toString('hex');
@@ -275,54 +261,21 @@ function isLegacyPublicToken(value) {
 }
 
 /**
- * 找 cloudflared 可执行文件。
- *
- * @returns 可执行文件路径，或 `undefined`（未安装）。
- */
-function findCloudflared() {
-	// ⚠️ `<STATE_DIR>/bin/` 这一条不能少：配对流程会自动把 cloudflared 下到这里
-	//（见 `pair.js` 的 `ensureCloudflared`），而客户机上通常别处都没有它。
-	// 漏了这一条的症状很隐蔽 —— 配对「成功」、隧道却起不来，
-	// 日志里只有一句「未找到 cloudflared」。
-	const binDir = join(STATE_DIR, 'bin');
-	const candidates = [
-		process.env.DSH_REMOTE_CLOUDFLARED,
-		join(binDir, process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared'),
-		process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'cloudflared', 'cloudflared.exe') : undefined,
-		'/usr/local/bin/cloudflared',
-		'/usr/bin/cloudflared',
-		'/opt/homebrew/bin/cloudflared',
-	].filter(Boolean);
-	for (const candidate of candidates) if (existsSync(candidate)) return candidate;
-	return undefined;
-}
-
-/**
  * 决定中继的访问令牌。
  *
- * ## 优先级（这是配对能自动生效的关键）
+ * 优先级只有两条：
  *
- * 1. **配对凭据里的 `accessToken`** —— 手机扫码后从服务器 claim 到的就是它，
- *    两端因此**不需要任何手工同步**。这是面向大众分发的主路径。
- * 2. `token.txt` 文件 —— 老用户 / 想自己换令牌的人走这条。
- * 3. **本机随机生成**并落盘 —— 既没配对也没文件时的兜底。
+ * 1. `token.txt` 里已有的值（老用户 / 想自己换令牌的人走这条）；
+ * 2. 本机随机生成并落盘（既没有文件时的兜底）。
  *
- * ⚠️ 第 3 条早期是「退回包内硬编码的常量」，那是个真实漏洞：常量随 npm 包公开，
+ * ⚠️ 早期实现还有第三条「退回包内硬编码常量」，那是个真实漏洞：常量随包公开，
  * 于是任何未配对的客户机都用**同一个公开令牌**跑中继，谁都能连上去读他的电脑。
- * 现在改成随机生成，包里不再含任何可用凭据（详见 `generateToken` 的注释）。
- *
- * ⚠️ 顺序不能反。若把文件放第一位，客户配对成功后令牌仍是文件里的旧值，
- * 而手机端拿到的是服务器新发的 —— 两端不一致，症状是「配对显示成功、
- * 一发消息就 401」，且完全看不出问题在哪。
+ * 现在包里不含任何可用凭据，见到那个旧令牌一律重新随机生成。
  *
  * @param ctx - Cordis 上下文（只用 logger）。
- * @param paired - 配对记录，或 `undefined`。
  * @returns 令牌字符串。
  */
-function ensureToken(ctx, paired) {
-	if (typeof paired?.accessToken === 'string' && paired.accessToken.length >= 16) {
-		return paired.accessToken;
-	}
+function ensureToken(ctx) {
 	try {
 		const existing = readFileSync(TOKEN_PATH, 'utf8').trim();
 		// ⚠️ 老版本把公开常量写进了这个文件。**必须当成没有令牌**，
@@ -340,7 +293,7 @@ function ensureToken(ctx, paired) {
 		writeFileSync(TOKEN_PATH, token, { mode: 0o600 });
 	} catch (error) {
 		// 写不了盘也照用（本机内存里这份仍是随机的）；只是下次启动会换一个，
-		// 而手机端要等配对才能知道新值 —— 配对是面向大众的主路径，不受影响。
+		// 届时桥那边要跟着换令牌，表现为手机端连不上 —— 属于该告警的异常。
 		ctx.logger?.warn?.(`[dsh-remote] 写令牌文件失败（本次仍用随机令牌）: ${String(error?.message ?? error)}`);
 	}
 	return token;
@@ -2331,7 +2284,7 @@ function startRelay(ctx, token) {
 	const pendingAsks = new Map();
 
 	/*
-	 * ## ⚠️ `ghostAsks` 已移除（1.0.52）
+	 * ## ⚠️ `ghostAsks` 已移除
 	 *
 	 * 原来这里有一个「幽灵记录」表：手机不在线时，请求不登记进
 	 * `pendingAsks`，而是塞进 `ghostAsks` —— 只保证「手机后来能看到」，
@@ -2540,7 +2493,7 @@ function startRelay(ctx, token) {
 		 * 手机端那条全局 SSE 一直连着，所以走全局就与"用户在哪个会话"无关了。
 		 */
 		/*
-		 * ## 有手机在线 ⇒ 推送。没在线 ⇒ **不推送，但照样等**（1.0.52 修）
+		 * ## 有手机在线 ⇒ 推送。没在线 ⇒ **不推送，但照样等**（上游原版 1.0.52 修）
 		 *
 		 * 这里原来是 if/else 两条完全不同的路：在线就等，不在线就立刻
 		 * `return fallback` + 只留幽灵记录。那个 else 分支是错的 ——
@@ -2857,7 +2810,7 @@ function startRelay(ctx, token) {
 						return desktop;
 					}
 					/*
-					 * ⚠️ **逐条校验 `id` 与 `selected`**（1.0.52）。
+					 * ⚠️ **逐条校验 `id` 与 `selected`**（上游原版 1.0.52）。
 					 *
 					 * 光看「answers 是数组」不够：官方 `answerResult()` 会做
 					 * `selected: [...answer.selected]`，只要某条的 `selected`
@@ -3283,14 +3236,6 @@ function startRelay(ctx, token) {
 
 	server.listen(RELAY_PORT, '127.0.0.1');
 	return {
-		/**
-		 * 换令牌（配对后热更新，无需重启 DSH）。
-		 *
-		 * @param next - 新令牌。
-		 */
-		setToken: (next) => {
-			auth.token = next;
-		},
 		close: () => {
 			for (const set of followers.values()) {
 				for (const res of set) {
@@ -3307,644 +3252,6 @@ function startRelay(ctx, token) {
 	};
 }
 
-/**
- * 启动 cloudflared 隧道（可选）。
- *
- * 没配置 token 就只跑中继 —— 用户仍可用局域网或自己的反代，本插件不强制隧道。
- *
- * @param ctx - Cordis 上下文。
- * @param token - 隧道 token。
- * @returns 子进程，或 `undefined`。
- */
-function startTunnel(ctx, token) {
-	const bin = findCloudflared();
-	if (bin === undefined) {
-		ctx.logger?.warn?.('[dsh-remote] 未找到 cloudflared，跳过隧道（中继仍在本地监听）');
-		return undefined;
-	}
-	// ⚠️⚠️ **隧道退出必须自动重连**（用户 2026-10-22 报障「加载工作区报 530」）
-	//
-	// ## 530 是什么
-	//
-	// Cloudflare 边缘返回 `530`（配 error 1033）只有一个含义：
-	// **边缘知道这条隧道，但此刻没有任何 cloudflared 连在上面**。
-	// 也就是「电脑开着、DSH 开着，但隧道进程死了」。
-	//
-	// ## 原来为什么会死
-	//
-	// 原实现只有一句
-	//
-	//     child.on('exit', (code) => ctx.logger?.warn?.(`隧道退出，code=${code}`));
-	//
-	// 打完就完事了 —— **没有任何重连**。而 cloudflared 退出的常见原因是
-	// 网络抖动 / 休眠唤醒 / 代理切换，这些都不需要人工干预，重启进程即可。
-	//
-	// 更糟的是那条 warn 在真机上**根本看不到**（`ctx.logger` 进不了 app.log，
-	// 用户报障时查过：一条都没有）。于是用户看到的是「手机突然连不上电脑，
-	// 报 HTTP 530」，而电脑上一切正常、没有任何提示 —— 只能重启 DSH 才能恢复。
-	//
-	// ## 重连策略
-	//
-	// 指数退避 1s → 2s → 4s → … 封顶 30s，**永不放弃**（隧道是远程访问的命脉，
-	// 放弃了就等于用户必须手动重启）。用户主动杀隧道（`restartTunnel` /
-	// 卸载）时不重连 —— 用 `stopped` 标志区分「意外退出」与「我们叫它退的」。
-	let stopped = false;
-	let attempt = 0;
-	let timer;
-	let child;
-
-	// ## ⚠️⚠️ 隧道传输协议：默认走 **http2**，不要用 cloudflared 的默认值
-	//
-	// 用户反馈（20261028-161358-a74170，iQOO 15u，附完整电脑端日志）：
-	//
-	//   「插件启动隧道用的命令是 `cloudflared tunnel --no-autoupdate run`，
-	//     未指定协议，即默认 QUIC。该网络会丢 UDP 7844：
-	//     INF Registered tunnel connection ... protocol=quic 之后立即
-	//     WRN datagram manager error: timeout: no recent network activity
-	//     WRN Connection terminated error=failed to dial to edge with quic
-	//     手动改为 --protocol http2（走 TCP）后能稳定注册。」
-	//
-	// 也就是说：原实现（不指定 `--protocol`）在**丢 UDP 的网络**里
-	// （酒店/校园/部分运营商，UDP 7844 被丢或被 QoS）**隧道根本起不来**，
-	// 而 cloudflared 会一直「Registered → Connection terminated」循环，
-	// 电脑侧看着像正常、手机侧永远连不上。
-	//
-	// 而 QUIC 唯一的好处是延迟略低，代价却是这类网络下**完全不可用**。
-	// 所以默认改成 http2（TCP，几乎不会被拦），并把 QUIC 保留为可选项：
-	//   · 环境变量 `DSH_REMOTE_TUNNEL_PROTOCOL=quic|http2` 可强制指定；
-	//   · 不指定时用 http2。
-	//
-	// 另外做**自动降级**：若 http2 也被显式指成了 quic 且连续建不起来，
-	// 见 `downgradeToHttp2` —— 但默认路径不需要它，因为默认就是 http2。
-	const requestedProtocol = (() => {
-		const raw = String(process.env.DSH_REMOTE_TUNNEL_PROTOCOL ?? '').trim().toLowerCase();
-		if (raw === 'quic') return 'quic';
-		return 'http2';
-	})();
-	let protocol = requestedProtocol;
-	/** QUIC 连续失败次数（见 relay 里的自动降级）。 */
-	let quicStrikes = 0;
-
-	const launch = () => {
-		child = spawn(bin, ['tunnel', '--no-autoupdate', '--protocol', protocol, 'run'], {
-			stdio: ['ignore', 'pipe', 'pipe'],
-			windowsHide: true,
-			env: { ...process.env, TUNNEL_TOKEN: token },
-		});
-		const relay = (buffer) => {
-			const line = String(buffer).trim();
-			if (line) ctx.logger?.info?.(`[dsh-remote][tunnel] ${line}`);
-			// ⚠️ **连上之后要把退避计数清零**。
-			//
-			// 不清零的话，退避是单调递增的：隧道稳定跑了半小时后又断一次，
-			// 会从上次的 16s / 30s 接着退避，而不是从 1s 开始 —— 而那种
-			// 「跑很久才断一次」的场景恰恰是网络抖动的常态，用户要等半分钟。
-			//
-			// cloudflared 建连成功时一定会打含 `Registered tunnel connection`
-			// 的那一行（真机日志核对过）。见到它就说明这次起来了。
-			if (line.indexOf('Registered tunnel connection') >= 0) attempt = 0;
-
-			// ## QUIC 连不上时自动降级到 http2
-			//
-			// 只有在**用户显式要求 quic**（`DSH_REMOTE_TUNNEL_PROTOCOL=quic`）
-			// 的情况下才需要这段：默认路径已经是 http2，不会进这里。
-			//
-			// 判据取 cloudflared 在 UDP 被丢/被 QoS 时的固定特征串（用户日志里
-			// 的原话，逐字核对过）：
-			//
-			//     failed to dial to edge with quic: timeout: no recent network activity
-			//     datagram manager error: timeout: no recent network activity
-			//
-			// 连续 3 次就认定这条网络不给 UDP 走，切 http2 并立刻重启隧道。
-			// 只降一次（降完 `protocol` 就是 http2，条件不再成立），不会来回抖。
-			if (protocol === 'quic') {
-				const quicFailed =
-					line.indexOf('failed to dial to edge with quic') >= 0 ||
-					line.indexOf('datagram manager error') >= 0;
-				if (quicFailed) {
-					quicStrikes += 1;
-					if (quicStrikes >= 3) {
-						protocol = 'http2';
-						quicStrikes = 0;
-						attempt = 0;
-						ctx.logger?.warn?.(
-							'[dsh-remote][tunnel] QUIC 连续 3 次连不上（该网络大概率丢弃 UDP 7844），' +
-								'已自动降级到 http2/TCP 并重启隧道',
-						);
-						// 立刻重建：不等 exit 的退避，这条隧道此刻已经是死的。
-						try {
-							child?.kill();
-						} catch {
-							/* 已退出 */
-						}
-					}
-				}
-			}
-		};
-		child.stdout?.on('data', relay);
-		child.stderr?.on('data', relay);
-		child.on('error', (error) => {
-			ctx.logger?.warn?.(`[dsh-remote] 隧道启动失败: ${String(error?.message ?? error)}`);
-		});
-		child.on('exit', (code) => {
-			if (stopped) {
-				ctx.logger?.info?.(`[dsh-remote] 隧道已按请求停止，code=${code}`);
-				return;
-			}
-			// 指数退避，封顶 30 秒。手机那边此刻会看到 530，越快恢复越好，
-			// 但也不能在电脑断网时每秒重试一次把日志刷爆。
-			const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-			attempt += 1;
-			ctx.logger?.warn?.(
-				`[dsh-remote] 隧道退出（code=${code}），${Math.round(delay / 1000)} 秒后自动重连（第 ${attempt} 次）`,
-			);
-			timer = setTimeout(() => {
-				if (stopped) return;
-				launch();
-			}, delay);
-			// 别让这个定时器把进程钉住（Node 里 unref 后它不会阻止退出）。
-			if (typeof timer.unref === 'function') timer.unref();
-		});
-	};
-
-	launch();
-
-	// 对外仍然返回一个「像子进程」的句柄：`restartTunnel` / `ctx.effect` 的
-	// 清理函数只用到 `kill()`，这里把 kill 语义升级成「停止并禁止重连」。
-	return {
-		kill() {
-			stopped = true;
-			if (timer !== undefined) clearTimeout(timer);
-			try {
-				child?.kill();
-			} catch {
-				/* 已退出 */
-			}
-		},
-		/** 供诊断：当前是否还在自动重连（`true` = 已停）。 */
-		get stopped() {
-			return stopped;
-		},
-	};
-}
-
-/**
- * 换一条隧道：杀掉旧的、起新的。
- *
- * ⚠️ 换隧道**必须换进程**：`cloudflared` 的凭据是启动参数，运行中改不了。
- * 旧的还挂着上一次（或内置）的凭据，不杀的话两条隧道同时连着 Cloudflare，
- * 域名解析到哪一条是随机的 —— 表现是「一会儿通一会儿 502」。
- *
- * @param ctx - Cordis 上下文。
- * @param current - 当前隧道子进程，或 `undefined`。
- * @param token - 新隧道 token；为空则只杀不起。
- * @returns 新的子进程，或 `undefined`。
- */
-function restartTunnel(ctx, current, token) {
-	try {
-		current?.kill();
-	} catch {
-		/* 已退出 */
-	}
-	if (typeof token !== 'string' || token.length < 16) {
-		ctx.logger?.warn?.('[dsh-remote] 配对记录里没有隧道 token，跳过重启隧道');
-		return undefined;
-	}
-	return startTunnel(ctx, token);
-}
-
-/**
- * **已作废**的旧共享隧道令牌的指纹 —— 只用于识别，**不是凭据**。
- *
- * ## 为什么需要这一条（外部审计自列 I3）
- *
- * 1.0.11 及更早的版本把**我自己的**那条 Cloudflare 隧道凭据当默认值硬编码在包里
- * （常量名已从源码中彻底移除，`_test/no-shared-credentials.mjs` 就断言它不再出现），
- * 既硬编码在包里、也会被写进 `tunnel.txt`。
- * 那个值已经随 npm 公开发布，**必须视为已泄露**。
- *
- * 老用户升级后 `tunnel.txt` 里还留着它，而 `readTunnelToken` 会照用 ⇒
- * 客户机被挂回**那条共享隧道**，等于 ① 挂到别人的域名上（本人毫不知情）
- * ② 任何拿到那个公开常量的人都能连上**所有**这些机器。这正是 `generateToken`
- * 的注释里描述的那个灾难级缺陷 —— 只修了 `token.txt` 那半边，
- * `tunnel.txt` 这半边漏了。
- *
- * ## ⚠️ 为什么存哈希而不是原值
- *
- * 识别它只需要比对，不需要原值。把完整凭据**再写进一遍源码**没有任何好处，
- * 却会让它继续出现在每个新版本里（审计也专门点了这一点）。所以存 sha256。
- *
- * 判据是「见到就当成没有隧道凭据」—— 与 `LEGACY_PUBLIC_TOKEN_FINGERPRINT` 同构：
- * 不是报错，是**重新走配对**（未配对就不起隧道，本机中继照常跑）。
- */
-const LEGACY_SHARED_TUNNEL_FINGERPRINT =
-	'70a18de8959ec4697239a8a5fa10abfb1e378328553f4b3ea862b29656a687ad';
-
-/**
- * 判断一个隧道凭据是不是那个已泄露的旧共享令牌。
- *
- * @param value - `tunnel.txt` 里的内容。
- * @returns 是否应视为「没有凭据」。
- */
-function isLegacySharedTunnelToken(value) {
-	const text = String(value ?? '').trim();
-	if (text === '') return true;
-	// ⚠️ 比对的是**旧常量本身**的 sha256（见上面常量的注释）。
-	return createHash('sha256').update(text, 'utf8').digest('hex') === LEGACY_SHARED_TUNNEL_FINGERPRINT;
-}
-
-/**
- * 读隧道凭据：**配对记录优先**，其次文件；都没有就返回 `undefined`（不起隧道）。
- *
- * ⚠️ **这里绝不能有「包内硬编码的兜底隧道令牌」**（早期版本有，是真实漏洞）。
- *
- * 硬编码的后果不是「方便」，而是把**同一条隧道**发给所有客户：每台未配对的机器
- * 都拿同一个凭据去连 `dsh-remote.example.com`，于是
- * ① 客户机被挂到**别人的域名**上，本人毫不知情；
- * ② 谁能拿到那个公开常量（`npm pack` 即可），谁就能连上**所有**这些机器。
- *
- * 隧道凭据只能来自「本机配对」——配对服务按激活码签发**每机一条**独立隧道。
- * 没有配对就不起隧道，本机中继仍在 `127.0.0.1:17890` 上跑（局域网/自建反代可用）。
- *
- * ⚠️ **`tunnel.txt` 里那个已泄露的旧共享令牌要当成没有**（见
- * `LEGACY_SHARED_TUNNEL_FINGERPRINT`）：只修 `token.txt` 那半边不够。
- *
- * @param paired - 配对记录，或 `undefined`。
- * @returns 隧道 token 字符串，或 `undefined`。
- */
-function readTunnelToken(paired) {
-	if (typeof paired?.tunnelToken === 'string' && paired.tunnelToken.length >= 16) {
-		// ⚠️ 配对记录里的凭据也要过这一关：老版本可能把它写进过 pair.json。
-		if (isLegacySharedTunnelToken(paired.tunnelToken)) {
-			return undefined;
-		}
-		return paired.tunnelToken;
-	}
-	let value;
-	try {
-		value = readFileSync(TUNNEL_PATH, 'utf8').trim();
-	} catch {
-		return undefined;
-	}
-	if (value === '') return undefined;
-	if (isLegacySharedTunnelToken(value)) {
-		// ⚠️ 见到就当成没有（不是报错）：让这台机器回去走配对，而不是
-		// 静默挂回那条全网共享的隧道。
-		return undefined;
-	}
-	return value;
-}
-
-/**
- * 配对路由的准入检查（fence）。
- *
- * ## ⚠️ 为什么必须自己加（外部审计 D4）
- *
- * 引擎的 `webserver` 只按 pathname 查表，**在路由命中前不做任何鉴权**
- * （`dsh-host-webserver/lib/index.js`：`handle()` 拿到 route 就直接
- * `route.handler(req, res)`）。引擎自己的准入（Host / `sec-fetch-site` /
- * Origin / 浏览器会话 cookie）是加在**它自己那条 `/api` 前缀路由的 handler 里**的。
- *
- * 而 `match()` 是「**最长前缀胜出**」：`/api/dsh-remote/pair`（20 字符）比
- * `/api`（4 字符）长 ⇒ 请求直接落到本函数的 handler，**引擎那层门根本不会被调用**。
- * 结果是：客户机上（按说明只装这两个 tgz、没有额外门卫）该路由**未认证可达**，
- * 于是 `/status`（泄露激活码）、`/handshake`、`/unpair`、`/register` 谁都能打。
- *
- * ## 判据（与引擎同款）
- *
- * - **Host 必须是 loopback** —— 配对界面是**本机**的（见 `handlePairRoute` 的
- *   docstring），没有任何正当理由从外部主机名访问。
- * - **`sec-fetch-site` 不能是 `cross-site`** —— 挡住「用户访问了恶意页面，
- *   那个页面在后台打本机 127.0.0.1」这类攻击。浏览器会带这个头，
- *   而**非浏览器（脚本）可以不带**，所以它只作辅助，不能单独当门。
- * - **Origin（若有）必须与 Host 同源**。
- * - **必须是 JSON 的 `content-type`** —— 挡掉 `text/plain` 这类**跨站简单请求**
- *   （它们不触发预检，浏览器也不带 Origin 之外的凭据）。注意这**不是** CSRF 的
- *   充分条件，但配合上面的 Host/Origin 检查足够挡住审计里点出的那条路。
- *
- * ⚠️ 失败一律回 **403 + 空 body**：不解释原因，不给探测者反馈。
- *
- * @param req - 请求。
- * @returns 是否放行。
- */
-function pairRequestAllowed(req) {
-	const host = String(req.headers?.host ?? '');
-	// Host 可能带端口（`127.0.0.1:3080`）与 IPv6 方括号。
-	const hostname = host.startsWith('[')
-		? host.slice(0, host.indexOf(']') + 1).toLowerCase()
-		: host.split(':')[0].toLowerCase();
-	const loopback =
-		hostname === '127.0.0.1' ||
-		hostname === 'localhost' ||
-		hostname === '[::1]' ||
-		hostname === '::1';
-	if (!loopback) return false;
-
-	// ⚠️ `sec-fetch-site` 缺失时**放行**（非浏览器客户端不带这个头，比如
-	// `curl` 或我们自己的测试）；但 `cross-site` 一律拒绝。
-	const site = String(req.headers?.['sec-fetch-site'] ?? '').toLowerCase();
-	if (site === 'cross-site') return false;
-
-	const origin = req.headers?.origin;
-	if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
-		let originHost;
-		try {
-			originHost = new URL(origin).host.toLowerCase();
-		} catch {
-			return false;
-		}
-		if (originHost !== host.toLowerCase()) return false;
-	}
-
-	// 写操作（非 GET/HEAD）必须是 JSON：`text/plain` 的跨站简单请求不需要预检。
-	const method = String(req.method ?? 'GET').toUpperCase();
-	if (method !== 'GET' && method !== 'HEAD') {
-		const type = String(req.headers?.['content-type'] ?? '').toLowerCase();
-		if (!type.includes('application/json')) return false;
-	}
-	return true;
-}
-
-/**
- * 配对路由的准入检查。
- *
- * ## ⚠️ 为什么需要两层（外部审计 4.1 / AUDIT_desktop 第 1 条）
- *
- * 引擎的 `webserver` 在路由命中**之前不做任何鉴权**，而 `match()` 是
- * 「精确表先命中、再最长前缀」：本插件的 `/api/dsh-remote/pair`(20) 比引擎的
- * `/api`(4) 长 ⇒ 请求落进本插件的 handler，**引擎那层 cookie 门根本不会被调用**。
- *
- * 第一版只有下面 `pairRequestAllowed` 那一条，它只做**浏览器向的 CSRF 防护**
- * （Host 是 loopback + `sec-fetch-site` + Origin 同源）。那挡不住**同机其它进程
- * 或同机另一个用户**：它们打 `127.0.0.1` 时 Host 也是 loopback，而非浏览器
- * 客户端根本不带 `sec-fetch-site`。攻击链：
- *
- * ```
- * GET  /api/dsh-remote/pair/status    → 拿到 hostname
- * GET  /api/dsh-remote/pair/handshake → 拿到 6 位配对码
- * POST https://pair.example.com/pair/claim → 拿到 accessToken
- * POST https://<hostname>/api/dsh-remote/rpc  → 驱动这台电脑上的真 agent
- * ```
- *
- * 同一作者在**手机端**已经用引擎的 `connection.requestRejection` 修过同类问题
- * （见 `dsh-remote-mobile` 的 `bridgeRejection`），电脑端当时没跟上 —— 这里补上。
- *
- * ## ⚠️ 取不到 `connection` 一律 **fail-closed**，与手机端同款
- *
- * 中途有一版在这里 fail-open（拿不到引擎判据就退回弱判据 + 告警），理由是
- * 「真 fail-closed 会让还没建会话的用户打不开配对界面」。⚠️ **那个理由是错的**：
- * `connection` **服务**是否存在，与**用户有没有登录**是两件事 ——
- * 前者是 cordis 的服务注册，引擎启动后必然就绪；后者才是 cookie。
- * 把两者混为一谈，等于用一个不存在的场景换来一个**永久**的不安全状态
- * （只要判据取不到就一直弱判据），那正是审计要修的东西。
- *
- * 窗口期的真实形态：cordis 的 `ctx.get(name, strict)` 对尚未 ACTIVE 的提供者
- * 返回 `undefined`（`cordis/lib/index.js:770`），而 client-connection 的
- * `await BrowserAuth.create(...)` 排在 `provide('connection')` 之前 ⇒
- * 引擎启动 / 插件重载期间本路由已经在收请求，而服务还没就绪。
- * 这段窗口**几秒钟**，界面表现为 HTTP 503 —— 刷新一下即可，与手机端一致。
- *
- * ## 逃生口（默认关）
- *
- * 万一某个部署里 `connection` 因非预期原因始终不可用，配对功能会整体不可用
- * （而配对是本机唯一的绑定入口，没有别的自救路径）。所以留一个**显式**开关：
- * `DSH_REMOTE_ALLOW_WEAK_GATE=1` 时才退回弱判据，并且**每次**都打告警。
- * ⚠️ 默认必须是关的 —— 默认开的判据等于没有判据。
- *
- * @param ctx - Cordis 上下文。
- * @param req - 请求。
- * @returns 拒绝时的 HTTP 状态码，放行时 `undefined`。
- */
-function pairGateRejection(ctx, req) {
-	// 第一层：CSRF 向的弱判据（永远要过）。
-	if (!pairRequestAllowed(req)) return 403;
-
-	// 第二层：引擎的判据（含浏览器会话 cookie）。
-	const connection = ctx.get?.('connection');
-	if (connection !== undefined && typeof connection.requestRejection === 'function') {
-		try {
-			return connection.requestRejection(req);
-		} catch (error) {
-			ctx.logger?.warn?.(
-				`[dsh-remote][pair] connection.requestRejection 抛错，配对路由 503（fail-closed）: ${String(error?.message ?? error)}`,
-			);
-			return pairWeakGateFallback(ctx, '判据抛错');
-		}
-	}
-	return pairWeakGateFallback(ctx, '取不到 connection 服务');
-}
-
-/**
- * `connection` 不可用时的处置：默认拒绝，只有显式开关打开才退回弱判据。
- *
- * @param ctx - Cordis 上下文。
- * @param why - 原因（进告警文案）。
- * @returns 拒绝时的状态码，逃生口打开时 `undefined`。
- */
-function pairWeakGateFallback(ctx, why) {
-	if (process.env.DSH_REMOTE_ALLOW_WEAK_GATE === '1') {
-		// ⚠️ 每一次都告警（不折成「只报一次」）：这是**降低安全性**的状态，
-		// 一直提示才对得起它。只报一次的话，运维翻日志时会以为早修好了。
-		ctx.logger?.warn?.(
-			`[dsh-remote][pair] ${why}，已按 DSH_REMOTE_ALLOW_WEAK_GATE=1 退回弱判据（Host + Origin + sec-fetch-site，**不含**浏览器会话校验）—— 同机其它进程/用户不构成边界`,
-		);
-		return undefined;
-	}
-	if (!pairGateDegradedWarned) {
-		pairGateDegradedWarned = true;
-		ctx.logger?.warn?.(
-			`[dsh-remote][pair] ${why}，配对路由一律 503（fail-closed，不降级到弱判据）—— 界面刷新即可；若持续如此，确认部署环境是否需要 DSH_REMOTE_ALLOW_WEAK_GATE=1`,
-		);
-	}
-	return 503;
-}
-
-/** fail-closed 告警只打一次，别刷屏（逃生口那条不在这里，它每次都打）。 */
-let pairGateDegradedWarned = false;
-
-/**
- * 处理一条配对相关的 HTTP 请求。
- *
- * 路由挂在 DSH 自己的 Web 端口上（不是中继端口 17890）—— 配对界面是
- * **本机**的，不该经公网隧道绕一圈回来。
- *
- * @param ctx - Cordis 上下文。
- * @param pairing - `createPairing()` 的返回值。
- * @param state - `apply()` 的运行态 `{ relay, tunnel }`（配对要热切这两样）。
- * @param req - 请求。
- * @param res - 响应。
- */
-function handlePairRoute(ctx, pairing, state, req, res) {
-	const reply = (code, payload) => {
-		res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
-		res.end(JSON.stringify(payload));
-	};
-	// ⚠️ 前置准入：只解析 body **之前**判，被拒的请求连 JSON 都不解析（见 fence 的 docstring）。
-	const rejected = pairGateRejection(ctx, req);
-	if (rejected !== undefined) {
-		res.writeHead(rejected);
-		res.end();
-		return;
-	}
-	const chunks = [];
-	req.on('data', (c) => chunks.push(c));
-	req.on('end', async () => {
-		const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-		const action = url.pathname.slice(PAIR_ROUTE.length) || '/status';
-		let body = {};
-		if (chunks.length > 0) {
-			try {
-				body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-			} catch (error) {
-				reply(400, { ok: false, message: `请求体不是合法 JSON: ${String(error?.message ?? error)}` });
-				return;
-			}
-		}
-		try {
-			switch (action) {
-				case '/status':
-					reply(200, { ok: true, ...pairing.status() });
-					return;
-
-				/** 填激活码 → 向服务器注册 → 起隧道。 */
-				case '/register': {
-					// ## ⚠️⚠️ 这里**绝不能再下载 cloudflared**（用户报障，已改）
-					//
-					// 用户原话：
-					//   「用户经常会遇到绑定的时候依赖下载超时，导致激活码也失效了，
-					//    然后又安装不上的问题。改成用户可以自己提前点击下载依赖，
-					//    就是环境检查通过了之后，再输入激活码。」
-					//
-					// 原来的顺序是：`register()` 先把激活码交给服务端（**此刻就已经
-					// 消费掉了**）→ 然后在同一次 HTTP 请求里下载 55 MB 的
-					// cloudflared（实测 47–67 秒，`ensureCloudflared` 的超时是 300 秒）。
-					//
-					// 于是国内网络下最常见的一幕是：
-					//   ① 激活码已经绑到这台机器上（服务端记录已建、隧道已建）
-					//   ② 下载超时/中断 ⇒ 这次响应是失败的
-					//   ③ 用户看到「绑定失败」，以为激活码没用上，**再填一次**
-					//   ④ 服务端按设备凭据认机器，但这台机器的 `pair.json` 里
-					//      已经写了 `clientSecret`，于是走的是「复用」分支……
-					//      而用户如果清过配置/重装插件，`clientSecret` 没了，
-					//      服务端就是 fail-closed ⇒「设备不符」⇒ **激活码永久废掉**。
-					//
-					// 现在把两件事**彻底拆开**：
-					//   `/environment` → 先检查/下载依赖（可以慢慢下、可以重试）
-					//   `/register`    → 只做注册，几秒返回，不再碰网络大文件
-					//
-					// 这样「下载失败」永远不会影响激活码。
-					const result = await pairing.register(body.code);
-					if (!result.ok) {
-						reply(200, { ok: false, message: result.message });
-						return;
-					}
-					// ⚠️ 换隧道必须**热切**，不能让客户去重启 DSH。
-					//
-					// 配对是运行中发生的：旧的隧道子进程还挂着内置凭据，
-					// 中继也还在用旧令牌校验。两处都要就地换掉 ——
-					// 面向大众的产品里「配完请重启」这一步等于功能不可用。
-					ctx.logger?.info?.(`[dsh-remote][pair] 隧道切换到 ${result.record.hostname}`);
-					// 只**查**不下载：注册这一步绝不阻塞在网络上。
-					const binary = pairing.findCloudflared();
-					if (binary === undefined) {
-						ctx.logger?.warn?.(
-							'[dsh-remote][pair] cloudflared 未就绪，隧道没起来（请在设置里先做「环境准备」）',
-						);
-					}
-					if (state.relay !== undefined && typeof result.record.accessToken === 'string') {
-						state.relay.setToken(result.record.accessToken);
-					}
-					state.tunnel = restartTunnel(ctx, state.tunnel, result.record.tunnelToken);
-					reply(200, {
-						ok: true,
-						message: binary !== undefined
-							? result.message
-							: `${result.message}。但隧道组件还没装好，请点上面的「下载隧道组件」补上，否则手机连不上这台电脑`,
-						...pairing.status(),
-					});
-					return;
-				}
-
-				/**
-				 * 环境准备：检查依赖，缺就下载。
-				 *
-				 * 与 `/register` 拆开的原因见 `/register` 顶部的注释 —— 一句话：
-				 * **下载失败不能牵连激活码**。这个端点可以随便重试、可以慢慢下，
-				 * 用户想点几次点几次。
-				 */
-				case '/environment': {
-					/*
-					 * `body.channel` 允许前端指定渠道（需求 4）：
-					 * `'github'`（官方，默认）/ `'mirror'`（作者中转）。
-					 * 不传就让 `ensureCloudflared` 按默认顺序自动试。
-					 */
-					const result = await pairing.ensureCloudflared({ channel: body?.channel });
-					reply(200, { ok: result.ok === true, ...result, ...pairing.status() });
-					return;
-				}
-
-				/** 生成 6 位配对码 + 二维码。 */
-				case '/handshake': {
-					const result = await pairing.handshake();
-					reply(200, result);
-					return;
-				}
-
-				/** 确保 cloudflared 在位（需要时自动下载）。 */
-				case '/cloudflared': {
-					const result = await pairing.ensureCloudflared({ channel: body?.channel });
-					reply(200, result);
-					return;
-				}
-
-				/**
-				 * 解绑：**先通知服务端清记录**，再清本机凭据、换令牌、停隧道。
-				 *
-				 * ⚠️ 必须通知服务端（外部审计 4.3）：否则服务端记录仍在，而
-				 * `legacy_claim` 已删除 ⇒ 这台机器**再也注册不上**（唯一出路是
-				 * 管理员 unregister）。详见 `pairing.release()` 的注释。
-				 */
-				case '/unpair': {
-					const result = await pairing.release();
-					// 解绑后必须**换掉**令牌：旧令牌已随配对公开过（手机端存了一份），
-					// 继续用等于解绑无效。
-					const fresh = generateToken();
-					try {
-						writeFileSync(TOKEN_PATH, fresh, { mode: 0o600 });
-					} catch (error) {
-						ctx.logger?.warn?.(`[dsh-remote] 解绑时写令牌失败: ${String(error?.message ?? error)}`);
-					}
-					if (state.relay !== undefined) state.relay.setToken(fresh);
-					// 隧道凭据属于**那一台**已配对的机器，解绑即失效；没有新凭据就不再起隧道。
-					state.tunnel = restartTunnel(ctx, state.tunnel, undefined);
-					// ⚠️ 服务端没清成功要**如实告诉用户**（不能只说「已解绑」）：
-					// 那种情况下本机确实不再对外了，但同一激活码重配会失败。
-					reply(200, {
-						ok: true,
-						released: result.released,
-						message: result.released
-							? '已解绑（服务端记录已清除），如需重连请重新配对'
-							: `本机已解绑并停止隧道，但服务端记录未清除（${result.message}）——如需重新配对请联系客服`,
-					});
-					return;
-				}
-
-				default:
-					reply(404, { ok: false, message: `未知操作 ${action}` });
-			}
-		} catch (error) {
-			ctx.logger?.warn?.(`[dsh-remote][pair] ${action} 失败: ${String(error?.message ?? error)}`);
-			reply(200, { ok: false, message: String(error?.message ?? error) });
-		}
-	});
-}
-
-/**
- * 插件入口。
- *
- * @param ctx - Cordis 上下文。
- * @param config - 插件配置：`{ tunnelToken?, autoTunnel? }`。
- */
 /**
  * **数据变更标记（dirty flag）** —— 需求 5 的核心。
  *
@@ -4015,10 +3322,11 @@ export function apply(ctx, config = {}) {
 	 *   本版：`lib/mail7z/` 起的桥 —— 手机把 RPC 打成加密 7z 传到 B2 私有桶，
 	 *         桥取回来、解密、转给 127.0.0.1:17890，再把应答/事件渲染成气泡写回去
 	 *
-	 * 因此这里**不再**起隧道、不再注册配对路由，改为起 `startMailBridge()`；
-	 * 配对信息（B2 四项 + 7z 密码）由 `SETTINGS_ROUTE` 那个设置页维护。
+	 * 因此这里只起 `startMailBridge()`：隧道 / 配对 / cloudflared 那套代码已整块
+	 * 删除（它们在本包里从来没有调用方）。配对信息（B2 四项 + 7z 密码）改由
+	 * `SETTINGS_ROUTE` 那个设置页维护。
 	 */
-	const token = ensureToken(ctx, undefined);
+	const token = ensureToken(ctx);
 	const state = { relay: undefined, mail: undefined };
 
 	/*
@@ -4092,7 +3400,7 @@ export function apply(ctx, config = {}) {
 
 		// ---- B2 / 7z 桥（替代原来的 Cloudflare 隧道） ----
 		//
-		// 它做三件事：pull `in/*.7z` → 转给本地中继 → 把应答与事件写回 `out/*.7z`。
+		// 它做三件事：pull `from-phone/*.7z` → 转给本地中继 → 把应答与事件写回 `from-desktop/*.7z`。
 		// 配置没填齐时**不抛错**，只在设置页显示「待填写」，填完自动接上。
 		try {
 			state.mail = startMailBridge({ relayToken: token, logger: ctx.logger, relayPort: RELAY_PORT });
@@ -4135,4 +3443,4 @@ export function apply(ctx, config = {}) {
 	}, 'dsh-remote: relay + b2/7z bridge + settings');
 }
 
-export { RELAY_PORT, TOKEN_PATH, TUNNEL_PATH, PAIR_ROUTE, listDirectory, handleRpc };
+export { RELAY_PORT, TOKEN_PATH, listDirectory, handleRpc };
