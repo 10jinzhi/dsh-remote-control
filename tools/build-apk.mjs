@@ -154,7 +154,7 @@ function main() {
 	const manifest = readFileSync(join(APP, 'AndroidManifest.xml'), 'utf8');
 	const versionName = /android:versionName="([^"]+)"/.exec(manifest)?.[1] ?? '0.0.0';
 	const versionCode = Number(/android:versionCode="(\d+)"/.exec(manifest)?.[1] ?? 1);
-	const apkName = `dsh-remote-${versionName}.apk`;
+	const apkName = `dsh-remote-control-${versionName}.apk`;
 
 	rmSync(BUILD, { recursive: true, force: true });
 	mkdirSync(BUILD, { recursive: true });
@@ -243,7 +243,7 @@ function main() {
 			run(jdk.keytool, [
 				'-genkeypair', '-noprompt',
 				'-keystore', R(KEYSTORE),
-				'-alias', 'dsh-remote',
+				'-alias', 'dsh-remote-control',
 				'-keyalg', 'RSA',
 				'-keysize', '2048',
 				'-validity', '10950',
@@ -260,7 +260,7 @@ function main() {
 		run(jdk.java, ['-jar', R(APKSIGNER_JAR),
 			'sign',
 			'--ks', R(KEYSTORE),
-			'--ks-key-alias', 'dsh-remote',
+			'--ks-key-alias', 'dsh-remote-control',
 			'--ks-pass', `pass:${KS_PASS}`,
 			'--key-pass', `pass:${KS_PASS}`,
 			'--min-sdk-version', String(MIN_SDK),

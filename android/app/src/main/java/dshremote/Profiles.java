@@ -82,7 +82,7 @@ public final class Profiles {
         Item item = new Item(id, DEFAULT_NAME);
         if (hasFlat) {
             flat.save(storeFor(id));
-            // 用云端文件名当默认档案名：用户看到「dsh-remote」比看到「我的电脑」
+            // 用云端文件名当默认档案名：用户看到「dsh-remote-control」比看到「我的电脑」
             // 更容易对上自己那台机器。留空时才退回通用名。
             if (!flat.cloudFile.isEmpty()) item.name = cleanName(flat.cloudFile);
             clearFlat();

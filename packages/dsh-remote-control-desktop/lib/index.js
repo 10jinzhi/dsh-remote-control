@@ -1,5 +1,5 @@
 /**
- * dsh-remote-desktop —— 电脑端（host half，装在客户电脑的 DSH 里）。
+ * dsh-remote-control-desktop —— 电脑端（host half，装在客户电脑的 DSH 里）。
  *
  * ## 这个插件做什么
  *
@@ -10,7 +10,7 @@
  * ## 架构（路 B：电脑跑 agent loop，手机搬事件流）
  *
  * ```
- *   手机 WebView ──HTTPS──> dsh-remote.example.com ──CF隧道──> 本机 :17890
+ *   手机 WebView ──HTTPS──> dsh-remote-control.example.com ──CF隧道──> 本机 :17890
  *                                                                    │
  *                                                            本插件的中继服务
  *                                                                    │
@@ -46,8 +46,8 @@
  *
  * ## 中继协议
  *
- * - `POST /api/dsh-remote/rpc`：`{ id, method, params }` → `{ id, ok, result }`
- * - `GET  /api/dsh-remote/stream?session=<id>`：SSE，`event:` 是 durable 事件、
+ * - `POST /api/dsh-remote-control/rpc`：`{ id, method, params }` → `{ id, ok, result }`
+ * - `GET  /api/dsh-remote-control/stream?session=<id>`：SSE，`event:` 是 durable 事件、
  *   `frame:` 是流式帧
  *
  * 选 SSE 而不是 WebSocket：手机 WebView 里 EventSource 是原生 API，断线自动重连
@@ -61,7 +61,7 @@
  * 而 **host 侧的帧永不丢**（进程内事件），重连后从 baseline 能补齐全部已生成内容。
  * 所以这条通道可以做成 best-effort，不必自己设计序号补洞。
  *
- * @module dsh-remote-desktop
+ * @module dsh-remote-control-desktop
  */
 
 import { createServer } from 'node:http';
@@ -72,14 +72,14 @@ import { basename, isAbsolute, dirname, join, relative, resolve, sep } from 'nod
 import { startMailBridge } from './mail7z/bridge.js';
 import { createSettingsHandler, SETTINGS_ROUTE } from './mail7z/settings.js';
 
-export const name = 'dsh-remote-desktop';
+export const name = 'dsh-remote-control-desktop';
 
 /**
  * `sessionController` 提供官方的建会话/发消息/中断命令层；`sessions` 用于
  * SSE 开场补发历史；中继 HTTP 服务由本插件自建（不用 `webServer`，因为
  * `webServer` 挂在 DSH 自己的 Web 端口上，而中继要独立占用 17890）。
  *
- * `webServer` 是给**设置页**用的：`/api/dsh-remote` 那条路由挂在 DSH 自己的
+ * `webServer` 是给**设置页**用的：`/api/dsh-remote-control` 那条路由挂在 DSH 自己的
  * Web 端口上，与中继端口无关。
  */
 export const inject = ['sessionController', 'sessions', 'webServer', 'workspaceRegistry'];
@@ -106,11 +106,11 @@ const COLD_RANGE_LIMIT = 2000;
  * ## ⚠️ 空串必须当「未设置」，不能用 `??`（外部审计 4.2 / 自列 I1）
  *
  * `process.env.DSH_HOME ?? ...` 只挡 `null`/`undefined`，**空串会一路进 `join`**，
- * 于是 `STATE_DIR` 变成**相对路径** `dsh-remote`，`dirname` 得到 `.`，
+ * 于是 `STATE_DIR` 变成**相对路径** `dsh-remote-control`，`dirname` 得到 `.`，
  * `realpathBestEffort('.')` 解析成**进程 CWD** —— 工作区围栏的「禁区根」
  * 从真实 `$DSH_HOME` 悄悄换成了 CWD，而真正的 `$DSH_HOME` 反而落在禁区之外。
  * 后果是 `createSession {cwd:"C:\\Users\\<user>\\.dsh"}` 被放行，再
- * `fileRead {path:"dsh-remote/pair.json"}` 就把 `accessToken` / `tunnelToken`
+ * `fileRead {path:"dsh-remote-control/pair.json"}` 就把 `accessToken` / `tunnelToken`
  * 读走了。而且 `token.txt` / `pair.json` 还会被写进 CWD（可能落在用户项目目录里
  * 被 git 带走）。
  *
@@ -130,7 +130,7 @@ function resolveDshHome() {
 }
 
 /** 配置与状态落在 $DSH_HOME 下的这个目录。 */
-const STATE_DIR = join(resolveDshHome(), 'dsh-remote');
+const STATE_DIR = join(resolveDshHome(), 'dsh-remote-control');
 
 /** 访问令牌文件。手机端要用同一个令牌才能连上。 */
 const TOKEN_PATH = join(STATE_DIR, 'token.txt');
@@ -215,13 +215,13 @@ const workspaceCreateStamps = [];
  * 实测后果（用包内那个公开令牌打公网隧道）：
  *
  * ```
- * POST https://dsh-remote.example.com/api/dsh-remote/rpc
- * x-dsh-remote-token: <包内公开常量>
+ * POST https://dsh-remote-control.example.com/api/dsh-remote-control/rpc
+ * x-dsh-remote-control-token: <包内公开常量>
  * → HTTP 200，cf-ray a4b1631e9a978bcf-SIN，读到本机 177 个目录条目
  * ```
  *
  * 面向大众分发时这个缺陷是**灾难级**的：每个客户机都拿同一个隧道凭据去连
- * **同一条**隧道（`dsh-remote.example.com`），而访问令牌又是公开常量 ——
+ * **同一条**隧道（`dsh-remote-control.example.com`），而访问令牌又是公开常量 ——
  * 于是**任何一个客户都能读其他客户整台电脑的目录、并能以他们的身份发消息**。
  * 客户机还会被挂到别人的域名上，本人毫不知情。
  *
@@ -282,7 +282,7 @@ function ensureToken(ctx) {
 		// 否则升级后仍在用那个已泄露的令牌 —— 漏洞等于没修。
 		if (existing.length >= 16 && !isLegacyPublicToken(existing)) return existing;
 		if (existing.length >= 16) {
-			ctx.logger?.warn?.('[dsh-remote] 检测到旧版内置的公开令牌（已泄露），正在换成本机随机令牌');
+			ctx.logger?.warn?.('[dsh-remote-control] 检测到旧版内置的公开令牌（已泄露），正在换成本机随机令牌');
 		}
 	} catch {
 		/* 文件不存在：下面生成一份并落盘 */
@@ -294,7 +294,7 @@ function ensureToken(ctx) {
 	} catch (error) {
 		// 写不了盘也照用（本机内存里这份仍是随机的）；只是下次启动会换一个，
 		// 届时桥那边要跟着换令牌，表现为手机端连不上 —— 属于该告警的异常。
-		ctx.logger?.warn?.(`[dsh-remote] 写令牌文件失败（本次仍用随机令牌）: ${String(error?.message ?? error)}`);
+		ctx.logger?.warn?.(`[dsh-remote-control] 写令牌文件失败（本次仍用随机令牌）: ${String(error?.message ?? error)}`);
 	}
 	return token;
 }
@@ -310,10 +310,10 @@ function sse(eventName, payload) {
  * ⚠️ 不能用 `undefined` / `null`：两者都可能是**合法的应答值**，
  * 用它当哨兵会把「手机明确回了空」误判成「手机没在」而重复走下一环。
  */
-const NO_TAKEOVER = Symbol('dsh-remote:no-takeover');
+const NO_TAKEOVER = Symbol('dsh-remote-control:no-takeover');
 
 /**
- * 诊断日志：写一行到 `~/.dsh/dsh-remote/desktop-debug.log`。
+ * 诊断日志：写一行到 `~/.dsh/dsh-remote-control/desktop-debug.log`。
  *
  * 为什么不用 `console.info`：桌面版是 Electron，插件跑在引擎子进程里，
  * stdout 被父进程收走、没有落盘，真机排查时**一条都看不到**。
@@ -326,7 +326,7 @@ async function debugLog(line) {
 		const { appendFile, mkdir } = await import('node:fs/promises');
 		const { join } = await import('node:path');
 		const { homedir } = await import('node:os');
-		const dir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-remote');
+		const dir = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'dsh-remote-control');
 		await mkdir(dir, { recursive: true });
 		await appendFile(join(dir, 'desktop-debug.log'), `${new Date().toISOString()} ${line}\n`, 'utf8');
 	} catch {
@@ -382,13 +382,13 @@ function listDrives() {
  *
  * ```
  * ① createSession { cwd: 'C:\\Users\\XIAOPAN' }          → ok（工作区 = 整个主目录）
- * ② fileStat      { path: '.dsh\\dsh-remote\\pair.json' } → ok，504 字节
+ * ② fileStat      { path: '.dsh\\dsh-remote-control\\pair.json' } → ok，504 字节
  * ```
  *
  * 第 ② 步走的是**相对路径**，所以 `resolveWorkspacePath` 那道围栏完全拦不住 ——
  * 它判的是「在不在工作区内」，而令牌文件**确实**在工作区内。
  *
- * `$DSH_HOME` 里有 `.credentials.yaml`（模型 API 密钥）、`dsh-remote/pair.json`
+ * `$DSH_HOME` 里有 `.credentials.yaml`（模型 API 密钥）、`dsh-remote-control/pair.json`
  * （访问令牌）、`sessions/`（全部会话历史）。这些都不该经公网可读。
  *
  * ## ⚠️⚠️ 1.0.15 的修法是错的：只排除 `$DSH_HOME` **一个根** 挡不住
@@ -396,7 +396,7 @@ function listDrives() {
  * 原判据是「cwd 落在 `$DSH_HOME` 之内就拒绝」。但攻击链第 ① 步用的是
  * **主目录**（`C:\Users\XIAOPAN`）—— 它是 `$DSH_HOME` 的**祖先**，
  * 根本不在 `$DSH_HOME` 之内，于是照旧放行；第 ② 步再去读
- * `.dsh\dsh-remote\pair.json` 是**相对路径**，围栏也拦不住（它判的是
+ * `.dsh\dsh-remote-control\pair.json` 是**相对路径**，围栏也拦不住（它判的是
  * 「在不在工作区内」，而令牌文件确实在工作区内）。
  *
  * 外部审计的原话是「用一个排除法思路修一个白名单问题」。实测复现：
@@ -414,13 +414,13 @@ function listDrives() {
  * @throws 当它是 `$DSH_HOME`、其祖先或其后代时。
  */
 function assertWorkspaceAllowed(cwd) {
-	const stateRoot = STATE_DIR; // $DSH_HOME/dsh-remote
+	const stateRoot = STATE_DIR; // $DSH_HOME/dsh-remote-control
 	const dshHome = dirname(stateRoot);
 	const target = realpathBestEffort(cwd);
 	const home = realpathBestEffort(dshHome);
 	// ① $DSH_HOME 自己 / 其后代：令牌、凭据、会话历史都在里面。
 	// ② $DSH_HOME 的祖先（含盘符根如 C:\）：把它当工作区，$DSH_HOME 就成了
-	//    它的子目录 —— 用相对路径 `.dsh\dsh-remote\pair.json` 即可读到令牌。
+	//    它的子目录 —— 用相对路径 `.dsh\dsh-remote-control\pair.json` 即可读到令牌。
 	if (isInside(home, target) || isInside(target, home)) {
 		throw new Error('不能把 DSH 自己的配置目录（或其所在目录）当作工作区，请选一个普通文件夹');
 	}
@@ -657,7 +657,7 @@ async function ensureWorkspaceId(ctx, cwd) {
  *   fileStat  { path: 'C:\\Windows\\win.ini' }                    → ok=true，92 字节
  *   fileReadBytes { path: '..\\..\\..\\..\\..\\..\\Windows\\win.ini' } → ok=true，
  *        data 解出 `; for 16-bit app support`
- *   fileStat  { path: '..\\..\\..\\..\\..\\..\\Users\\XIAOPAN\\.dsh\\dsh-remote\\pair.json' }
+ *   fileStat  { path: '..\\..\\..\\..\\..\\..\\Users\\XIAOPAN\\.dsh\\dsh-remote-control\\pair.json' }
  *        → ok=true，504 字节 —— **连自己的访问令牌都能被读走**
  *
  * 所以「手机只能看会话工作区」这件事**必须在本函数里保证**，不能指望官方兜底。
@@ -741,7 +741,7 @@ function workspaceFilesOf(ctx) {
  * 对工作区外的路径**本来就是放行的**（它内部只是 `resolve(cwd, path)`），
  * 所以 `resolveWorkspacePath` 是唯一防线，而它的界就是这里给的
  * `workspaceRoot`。若这个 root 本身就是 `$DSH_HOME`，那道防线等于画在
- * `$DSH_HOME` 上 —— `.dsh\dsh-remote\pair.json`（含 `accessToken`）就在界内。
+ * `$DSH_HOME` 上 —— `.dsh\dsh-remote-control\pair.json`（含 `accessToken`）就在界内。
  *
  * 所以这里**同样**要求 cwd 通过围栏。合法的普通目录不受任何影响。
  *
@@ -1130,7 +1130,7 @@ async function handleRpc(ctx, method, params, io) {
 		 * 不排的话，文件围栏可被**绕过** —— 公网实测：
 		 *
 		 *   1. `createSession { cwd: 'C:\\Users\\XIAOPAN' }`   → ok，工作区被设成主目录
-		 *   2. `fileStat { path: '.dsh\\dsh-remote\\pair.json' }` → ok，504 字节
+		 *   2. `fileStat { path: '.dsh\\dsh-remote-control\\pair.json' }` → ok，504 字节
 		 *
 		 * 第 2 步用的是**相对路径**，所以 `resolveWorkspacePath` 那道围栏
 		 * 完全拦不住它 —— 工作区本身就是「整个主目录」。围栏是**以工作区为界**的，
@@ -1321,7 +1321,7 @@ async function handleRpc(ctx, method, params, io) {
 							});
 						} catch (error) {
 							ctx.logger?.warn?.(
-								`[dsh-remote] 会话 ${sessionId} 的模型 ${model.provider}/${model.model} 设置失败，改用默认模型: ${String(
+								`[dsh-remote-control] 会话 ${sessionId} 的模型 ${model.provider}/${model.model} 设置失败，改用默认模型: ${String(
 									error?.message ?? error,
 								)}`,
 							);
@@ -2049,7 +2049,7 @@ async function handleRpc(ctx, method, params, io) {
 					// 超过上限（大历史会话）就不物化，让手机端走重连。
 					if (total > COLD_RANGE_LIMIT) {
 						ctx.logger?.warn?.(
-							`[dsh-remote] 会话 ${sessionId} 有 ${total} 条事件，超过补洞上限 ${COLD_RANGE_LIMIT}，放弃补发`,
+							`[dsh-remote-control] 会话 ${sessionId} 有 ${total} 条事件，超过补洞上限 ${COLD_RANGE_LIMIT}，放弃补发`,
 						);
 						return { events: [] };
 					}
@@ -2204,7 +2204,7 @@ function startRelay(ctx, token) {
 				try {
 					res.write(chunk);
 				} catch (error) {
-					ctx.logger?.warn?.(`[dsh-remote] 全局推送失败: ${String(error?.message ?? error)}`);
+					ctx.logger?.warn?.(`[dsh-remote-control] 全局推送失败: ${String(error?.message ?? error)}`);
 					globals.delete(res);
 				}
 			}
@@ -2222,7 +2222,7 @@ function startRelay(ctx, token) {
 			try {
 				res.write(chunk);
 			} catch (error) {
-				ctx.logger?.warn?.(`[dsh-remote] 推送失败: ${String(error?.message ?? error)}`);
+				ctx.logger?.warn?.(`[dsh-remote-control] 推送失败: ${String(error?.message ?? error)}`);
 				set.delete(res);
 			}
 		}
@@ -2262,7 +2262,7 @@ function startRelay(ctx, token) {
 	// 官方确实把这两个事件列进了转发白名单
 	// （`dsh-api-remotes/lib/index.js` 的 API_REMOTE_FORWARDED_EVENTS，
 	//   mode: 'waterfall'），但它走的是 **`typertGateway` 的 Remote 通道**，
-	// 而本插件的手机端连的是**自建的 `/api/dsh-remote/rpc` + `/api/dsh-remote/stream`**
+	// 而本插件的手机端连的是**自建的 `/api/dsh-remote-control/rpc` + `/api/dsh-remote-control/stream`**
 	// （为了能在公网隧道上跑、且不需要官方那套 Peer 鉴权）。
 	// 两条通道互不相通 ⇒ 官方转发了，手机也收不到。
 	//
@@ -2960,7 +2960,7 @@ function startRelay(ctx, token) {
 		const url = new URL(req.url ?? '/', `http://127.0.0.1:${RELAY_PORT}`);
 
 		// 鉴权：令牌走 header 或 query（EventSource 不能设 header，所以 query 也要收）。
-		const provided = req.headers['x-dsh-remote-token'] ?? url.searchParams.get('token') ?? '';
+		const provided = req.headers['x-dsh-remote-control-token'] ?? url.searchParams.get('token') ?? '';
 		if (!tokenMatches(provided, auth.token)) {
 			res.writeHead(401, { 'content-type': 'application/json; charset=utf-8' });
 			res.end(JSON.stringify({ error: 'unauthorized' }));
@@ -2968,7 +2968,7 @@ function startRelay(ctx, token) {
 		}
 
 		// ---- SSE：跟随一个会话的事件流 ----
-		if (url.pathname === '/api/dsh-remote/stream' && req.method === 'GET') {
+		if (url.pathname === '/api/dsh-remote-control/stream' && req.method === 'GET') {
 			const sessionId = url.searchParams.get('session');
 			/*
 			 * **不带 `session` ⇒ 全局订阅**（1.0.49，用户 2026-10-29 报障）。
@@ -3147,7 +3147,7 @@ function startRelay(ctx, token) {
 				try {
 					await pushBacklog(true);
 				} catch (error) {
-					ctx.logger?.warn?.(`[dsh-remote] 补发历史失败: ${String(error?.message ?? error)}`);
+					ctx.logger?.warn?.(`[dsh-remote-control] 补发历史失败: ${String(error?.message ?? error)}`);
 				}
 
 				// 补齐完成后才订阅实时推送（顺序见上面的 ⚠️）。
@@ -3159,7 +3159,7 @@ function startRelay(ctx, token) {
 				try {
 					await pushBacklog(false);
 				} catch (error) {
-					ctx.logger?.warn?.(`[dsh-remote] 追补增量失败: ${String(error?.message ?? error)}`);
+					ctx.logger?.warn?.(`[dsh-remote-control] 追补增量失败: ${String(error?.message ?? error)}`);
 				}
 
 				const heartbeat = setInterval(() => {
@@ -3182,7 +3182,7 @@ function startRelay(ctx, token) {
 		}
 
 		// ---- RPC：手机发起的动作 ----
-		if (url.pathname === '/api/dsh-remote/rpc' && req.method === 'POST') {
+		if (url.pathname === '/api/dsh-remote-control/rpc' && req.method === 'POST') {
 			const chunks = [];
 			req.on('data', (c) => chunks.push(c));
 			req.on('end', async () => {
@@ -3229,7 +3229,7 @@ function startRelay(ctx, token) {
 	 */
 	server.on('error', (error) => {
 		ctx.logger?.warn?.(
-			`[dsh-remote] 中继无法监听 127.0.0.1:${RELAY_PORT}（${String(error?.message ?? error)}）` +
+			`[dsh-remote-control] 中继无法监听 127.0.0.1:${RELAY_PORT}（${String(error?.message ?? error)}）` +
 				'；多半是另一个 DSH 实例已在运行。远程功能不可用，但本进程其余功能不受影响。',
 		);
 	});
@@ -3376,26 +3376,26 @@ export function apply(ctx, config = {}) {
 	ctx.effect(() => {
 		try {
 			state.relay = startRelay(ctx, token);
-			ctx.logger?.info?.(`[dsh-remote] 中继已监听 http://127.0.0.1:${RELAY_PORT}`);
+			ctx.logger?.info?.(`[dsh-remote-control] 中继已监听 http://127.0.0.1:${RELAY_PORT}`);
 			// ⚠️⚠️ **绝不能把令牌本身打进日志**（外部审计 D3）。
 			// 令牌 = 这台电脑的完全控制权：日志会落盘、可被 GUI 的 `/export`
 			// 导成 zip、可能随诊断包上传，而 **agent 自己就有读日志的能力**
 			// （用户一句「把日志打出来」就等于把钥匙交出去）。
 			// 需要排查时只打**指纹**：`tokenHash` 可对账、不可复用。
 			ctx.logger?.info?.(
-				`[dsh-remote] 访问令牌: <已隐藏，指纹 ${tokenFingerprint(token)}>`
+				`[dsh-remote-control] 访问令牌: <已隐藏，指纹 ${tokenFingerprint(token)}>`
 			);
-			ctx.logger?.info?.(`[dsh-remote] 令牌文件: ${TOKEN_PATH}`);
+			ctx.logger?.info?.(`[dsh-remote-control] 令牌文件: ${TOKEN_PATH}`);
 			/*
 			 * 配对状态不再来自 pair.json，而是「5 项 B2 配置是否填齐」——
 			 * 由桥自己判断，这里只提示去哪填。
 			 */
 			ctx.logger?.info?.(
-				`[dsh-remote] 远程控制设置页：http://127.0.0.1:<DSH 端口>${SETTINGS_ROUTE}` +
+				`[dsh-remote-control] 远程控制设置页：http://127.0.0.1:<DSH 端口>${SETTINGS_ROUTE}` +
 				'（填 4 项 B2 配置 + 1 个 7z 密码即完成配对，无需激活码）',
 			);
 		} catch (error) {
-			ctx.logger?.error?.(`[dsh-remote] 中继启动失败: ${String(error?.message ?? error)}`);
+			ctx.logger?.error?.(`[dsh-remote-control] 中继启动失败: ${String(error?.message ?? error)}`);
 		}
 
 		// ---- B2 / 7z 桥（替代原来的 Cloudflare 隧道） ----
@@ -3404,9 +3404,9 @@ export function apply(ctx, config = {}) {
 		// 配置没填齐时**不抛错**，只在设置页显示「待填写」，填完自动接上。
 		try {
 			state.mail = startMailBridge({ relayToken: token, logger: ctx.logger, relayPort: RELAY_PORT });
-			ctx.logger?.info?.('[dsh-remote] B2/7z 桥已启动（等待配对配置）');
+			ctx.logger?.info?.('[dsh-remote-control] B2/7z 桥已启动（等待配对配置）');
 		} catch (error) {
-			ctx.logger?.error?.(`[dsh-remote] B2/7z 桥启动失败: ${String(error?.message ?? error)}`);
+			ctx.logger?.error?.(`[dsh-remote-control] B2/7z 桥启动失败: ${String(error?.message ?? error)}`);
 		}
 
 		// ---- 设置页（挂在本机 Web 端口上） ----
@@ -3422,10 +3422,10 @@ export function apply(ctx, config = {}) {
 						path: SETTINGS_ROUTE,
 						handler: (req, res) => handler(req, res),
 					}),
-				'dsh-remote: settings route',
+				'dsh-remote-control: settings route',
 			);
 		} else {
-			ctx.logger?.warn?.('[dsh-remote] webServer 不可用，配对设置页无法打开（桥本身不受影响）');
+			ctx.logger?.warn?.('[dsh-remote-control] webServer 不可用，配对设置页无法打开（桥本身不受影响）');
 		}
 
 		return () => {
@@ -3440,7 +3440,7 @@ export function apply(ctx, config = {}) {
 				/* 已关闭 */
 			}
 		};
-	}, 'dsh-remote: relay + b2/7z bridge + settings');
+	}, 'dsh-remote-control: relay + b2/7z bridge + settings');
 }
 
 export { RELAY_PORT, TOKEN_PATH, listDirectory, handleRpc };

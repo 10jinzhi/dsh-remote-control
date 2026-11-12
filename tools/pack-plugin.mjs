@@ -1,7 +1,7 @@
 /**
  * 打包电脑端插件 —— 产出一个可以直接交给 DSH 安装的 zip。
  *
- * 内容就是 `packages/dsh-remote-desktop/` 里的 `lib/` + `cordis.patch.yml` +
+ * 内容就是 `packages/dsh-remote-control-desktop/` 里的 `lib/` + `cordis.patch.yml` +
  * `package.json` + `README.md`（与 package.json 的 `files` 字段一致），
  * 额外确认：zip 里没有 node_modules、没有 `.env`、没有任何 `config.json`
  * —— 凭据永远只存在使用者的 `$DSH_HOME` 里，不进发行包。
@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const SRC = join(ROOT, 'packages', 'dsh-remote-desktop');
+const SRC = join(ROOT, 'packages', 'dsh-remote-control-desktop');
 const OUT = join(ROOT, 'out');
 const SEVEN_ZIP = process.env.DSH_REMOTE_7Z ?? 'C:/Program Files/7-Zip/7z.exe';
 
@@ -48,7 +48,7 @@ function main() {
 	console.log(`  条目   ${files.length} 个：`);
 	for (const entry of files) {
 		const name = entry.split(/\s+/).pop() ?? entry;
-		console.log(`         ${name.replace(/\\/g, '/').replace(/^.*dsh-remote-desktop\//, '')}`);
+		console.log(`         ${name.replace(/\\/g, '/').replace(/^.*dsh-remote-control-desktop\//, '')}`);
 	}
 	return zipPath;
 }

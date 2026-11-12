@@ -1,4 +1,4 @@
-# dsh-remote-desktop —— bundle 补丁。
+# dsh-remote-control-desktop —— bundle 补丁。
 #
 # 这个文件的作用是往 profile 的 loader 树里 insert 一行，让本插件被真正加载。
 # 官方安装器只接受「bundle 型」插件（`dsh.bundle.patch` 指向本文件），
@@ -11,5 +11,5 @@
 # 但**不要同时启用**（都会抢 127.0.0.1:17890）。
 
 - insert:
-    - id: dsh-remote-desktop
-      name: 'dsh-remote-desktop'
+    - id: dsh-remote-control-desktop
+      name: 'dsh-remote-control-desktop'

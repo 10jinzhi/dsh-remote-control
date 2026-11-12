@@ -110,7 +110,7 @@ function run7z(args, { stdin = null, timeout = 60_000 } = {}) {
 }
 
 function tmpPath() {
-	return join(tmpdir(), `dsh-remote-${randomBytes(8).toString('hex')}.7z`);
+	return join(tmpdir(), `dsh-remote-control-${randomBytes(8).toString('hex')}.7z`);
 }
 
 /**

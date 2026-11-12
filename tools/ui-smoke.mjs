@@ -183,7 +183,7 @@ check('状态推送能填好表单与状态栏', () => {
 		config: {
 			appKeyId: '005f-test',
 			bucket: 'my-dsh-bucket',
-			cloudFile: 'dsh-remote',
+			cloudFile: 'dsh-remote-control',
 			hasAppKey: true,
 			hasPassword: true,
 			channel: 'abc123def456',
@@ -196,7 +196,7 @@ check('状态推送能填好表单与状态栏', () => {
 	}));
 	assert(elements.get('v-channel').textContent === 'abc123def456', '通道没填上');
 	assert(elements.get('f-keyid').value === '005f-test', '表单没填上');
-	assert(elements.get('f-cloud').value === 'dsh-remote', '云端文件名没填上');
+	assert(elements.get('f-cloud').value === 'dsh-remote-control', '云端文件名没填上');
 	assert(elements.get('v-link').textContent.includes('已连接'), '状态文案不对');
 	assert(elements.get('logs').textContent.includes('B2 授权成功'), '日志没渲染');
 	assert(elements.get('titleText').textContent.includes('已连接'), '标题没更新');

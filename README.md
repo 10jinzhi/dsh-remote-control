@@ -1,12 +1,12 @@
 # DSH 远程控制
 
-**DSH Remote Control** · 代码标识 `dsh-remote`
+**DSH Remote Control** · 代码标识 `dsh-remote-control`
 
 用你自己的一只私有云桶当通道，把手机变成本机 DSH 的远程终端。手机只负责连接，
 所有能力、所有数据都留在电脑上。
 
-- **电脑端**：一个 DSH 插件（`packages/dsh-remote-desktop`）
-- **手机端**：一个 74KB 的 APK（`out/dsh-remote-1.0.0.apk`），**只能连接电脑**，没有本机能力
+- **电脑端**：一个 DSH 插件（`packages/dsh-remote-control-desktop`）
+- **手机端**：一个 76.7KB 的 APK（`out/dsh-remote-control-1.0.0.apk`），**只能连接电脑**，没有本机能力
 
 没有配对码、没有 Cloudflare 隧道、没有第三方服务器 —— 只有你自己的桶，
 桶里全是密文。
@@ -43,9 +43,9 @@ from-desktop/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
 
 ```bash
 # 方式一：直接放进插件目录
-cp -r packages/dsh-remote-desktop <你的 DSH 插件目录>/
+cp -r packages/dsh-remote-control-desktop <你的 DSH 插件目录>/
 # 方式二：用打好的 zip
-#   out/dsh-remote-desktop-1.0.0.zip
+#   out/dsh-remote-control-desktop-1.0.0.zip
 ```
 
 重启 DSH，打开 **设置 → DSH 远程控制**，填那 5 项，点 **测试往返**：
@@ -63,7 +63,7 @@ cp -r packages/dsh-remote-desktop <你的 DSH 插件目录>/
 ### 2. 手机端：装 APK
 
 ```bash
-adb install -r out/dsh-remote-1.0.0.apk
+adb install -r out/dsh-remote-control-1.0.0.apk
 ```
 
 打开应用，填**完全一样**的 5 项，点 **保存并连接**。状态灯变绿 = 已连上电脑。
@@ -104,8 +104,8 @@ adb install -r out/dsh-remote-1.0.0.apk
 ## 目录结构
 
 ```
-packages/dsh-remote-desktop/          电脑端插件（零第三方依赖）
-  lib/index.js                         中继（复制自隔壁插件，只改了入口与配对方式）
+packages/dsh-remote-control-desktop/  电脑端插件（零第三方依赖）
+  lib/index.js                         中继 + 插件入口（隧道/配对那套已整块删除）
   lib/mail7z/config.js                 5 项配置 + 通道派生 + 状态
   lib/mail7z/b2.js                     B2 Native API 客户端
   lib/mail7z/sevenz.js                 调系统 7z 打包/解包（stdin/stdout）

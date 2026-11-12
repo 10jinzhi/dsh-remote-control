@@ -4,7 +4,7 @@
  * 页面长得跟手机 APK 的「设置」一致：同样是那 5 个输入框，同样的顺序，
  * 填完点保存，两端算出来的通道 ID 相同即可连通。
  *
- * 路由（前缀 `/api/dsh-remote`）：
+ * 路由（前缀 `/api/dsh-remote-control`）：
  *
  *   GET  /state     → 当前配置（密码打码）+ 运行时状态
  *   POST /config    → 保存 5 项并让桥立即重载（不用重启 DSH）
@@ -18,7 +18,7 @@ import { B2Client } from './b2.js';
 import { Mailbox } from './mailbox.js';
 import { packJson, unpackJson } from './sevenz.js';
 
-const ROUTE = '/api/dsh-remote';
+const ROUTE = '/api/dsh-remote-control';
 
 function mask(value) {
 	const s = typeof value === 'string' ? value : '';
@@ -104,7 +104,7 @@ async function selfTest(cfg) {
 }
 
 export function createSettingsHandler({ bridge, logger }) {
-	const log = (m) => logger?.info?.(`[dsh-remote] ${m}`) ?? console.log(`[dsh-remote] ${m}`);
+	const log = (m) => logger?.info?.(`[dsh-remote-control] ${m}`) ?? console.log(`[dsh-remote-control] ${m}`);
 
 	return async function handle(req, res) {
 		const url = new URL(req.url ?? '/', 'http://127.0.0.1');
@@ -256,7 +256,7 @@ const PAGE = `<!doctype html>
     <input id="password" type="password" placeholder="留空表示不修改" autocomplete="new-password">
     <div class="hint">每个上传的 7z 都用它做 AES-256 加密；电脑端与手机端必须完全一致（区分大小写与空格）。</div>
 
-    <div class="warnbox">⚠️ 凭据只保存在本机 $DSH_HOME/dsh-remote/config.json（权限 0600）。B2 的 Master Application Key 不支持 Native API 上传，请另建一把「限定 bucket、Read and Write」的 Application Key。</div>
+    <div class="warnbox">⚠️ 凭据只保存在本机 $DSH_HOME/dsh-remote-control/config.json（权限 0600）。B2 的 Master Application Key 不支持 Native API 上传，请另建一把「限定 bucket、Read and Write」的 Application Key。</div>
 
     <div class="row">
       <button class="primary" id="save">保存设置</button>

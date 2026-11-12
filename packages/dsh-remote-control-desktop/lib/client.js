@@ -1,9 +1,9 @@
 /**
- * dsh-remote-desktop —— 电脑端（client half，跑在 DSH Web GUI 的「设置」里）。
+ * dsh-remote-control-desktop —— 电脑端（client half，跑在 DSH Web GUI 的「设置」里）。
  *
  * ## 这一页只做一件事
  *
- * 把真正的配对页（`GET /api/dsh-remote/`，由 host 半边的 `settings.js` 提供）
+ * 把真正的配对页（`GET /api/dsh-remote-control/`，由 host 半边的 `settings.js` 提供）
  * 嵌进 DSH 的设置里，让用户不需要记 URL 也能找到那 5 个输入框。
  *
  * ## 为什么配对页不写在这里
@@ -23,11 +23,11 @@
  * 与隔壁插件同样的口径：**不用**可选链 `?.`、空值合并 `??`、`Object.fromEntries`、
  * `Array.prototype.flat` 这些较新语法（客户端 bundle 的编译目标不确定，宁可保守）。
  *
- * @module dsh-remote-desktop/client
+ * @module dsh-remote-control-desktop/client
  */
 
 window.__ModuleLoader__.load({
-	id: 'dsh-remote-desktop',
+	id: 'dsh-remote-control-desktop',
 	factory: (require) => {
 		var module = { exports: {} };
 
@@ -39,7 +39,7 @@ window.__ModuleLoader__.load({
 		var Pill = primitives.Pill;
 
 		/** 配对页与它的 JSON 状态（见 lib/mail7z/settings.js）。 */
-		var API = '/api/dsh-remote';
+		var API = '/api/dsh-remote-control';
 
 		// ---------------------------------------------------------------- 样式
 		//
@@ -190,7 +190,7 @@ window.__ModuleLoader__.load({
 		// ---------------------------------------------------------------- 注册
 
 		var SLOT = 'settings.section';
-		var CELL_ID = 'dsh-remote-desktop';
+		var CELL_ID = 'dsh-remote-control-desktop';
 		var inject = ['slots'];
 
 		function apply(ctx) {

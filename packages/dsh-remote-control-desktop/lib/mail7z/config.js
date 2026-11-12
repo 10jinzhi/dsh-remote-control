@@ -11,7 +11,7 @@
  * 用 Master Application Key），`cloudFile` 决定桶里用哪个目录做「邮箱」，
  * `password` 是每个 7z 包的加密密码。
  *
- * ⚠️ 这 5 项都**只存本机**：电脑端落在 `$DSH_HOME/dsh-remote/config.json`
+ * ⚠️ 这 5 项都**只存本机**：电脑端落在 `$DSH_HOME/dsh-remote-control/config.json`
  * （0600），手机端落在应用私有目录里，两端都不进任何仓库。
  *
  * 通道 ID 由 `bucket + cloudFile + appKey` 确定性派生，所以两端填同样的 5 项
@@ -28,7 +28,7 @@ export function dshHome() {
 	return raw === '' ? join(homedir(), '.dsh') : raw;
 }
 
-export const STATE_DIR = join(dshHome(), 'dsh-remote');
+export const STATE_DIR = join(dshHome(), 'dsh-remote-control');
 export const CONFIG_PATH = join(STATE_DIR, 'config.json');
 export const STATE_PATH = join(STATE_DIR, 'state.json');
 
@@ -40,7 +40,7 @@ export const STATE_PATH = join(STATE_DIR, 'state.json');
  * 而且 `in` `out` 太通用，人翻桶看不出方向。升版本号而不是原地改名，
  * 是为了让旧结构彻底不被新代码扫到 —— 这版还没对外使用，干净切换比兼容划算。
  */
-const ROOT = 'dsh-remote/v2';
+const ROOT = 'dsh-remote-control/v2';
 
 /** 云端文件名只允许这几类字符，其余一律换成 `_`（B2 对象名不能随便来）。 */
 export function sanitizeName(value) {

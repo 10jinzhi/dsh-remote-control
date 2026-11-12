@@ -30,8 +30,8 @@ import { packJson, unpackJson, sevenZipPath } from './sevenz.js';
 import { createApi } from './api.js';
 import { renderEvent } from './render.js';
 
-const RPC_PATH = '/api/dsh-remote/rpc';
-const STREAM_PATH = '/api/dsh-remote/stream';
+const RPC_PATH = '/api/dsh-remote-control/rpc';
+const STREAM_PATH = '/api/dsh-remote-control/stream';
 
 /** 心跳间隔 / 「手机还在」的判定窗口。 */
 const HB_EVERY_MS = 30_000;
@@ -65,7 +65,7 @@ class SseTap {
 		this.closed = false;
 		this.req = null;
 		this.label = label;
-		const req = http.get(url, { headers: { accept: 'text/event-stream', 'x-dsh-remote-token': token } }, (res) => {
+		const req = http.get(url, { headers: { accept: 'text/event-stream', 'x-dsh-remote-control-token': token } }, (res) => {
 			if (res.statusCode !== 200) {
 				onError?.(`SSE ${this.label} HTTP ${res.statusCode}`);
 				res.resume();
@@ -100,8 +100,8 @@ export class MailBridge {
 	constructor({ relayToken, logger, relayPort = 17890 } = {}) {
 		this.relayToken = relayToken;
 		this.relayOrigin = `http://127.0.0.1:${relayPort}`;
-		this.log = (m) => (logger?.info ? logger.info(`[dsh-remote] ${m}`) : console.log(`[dsh-remote] ${m}`));
-		this.warn = (m) => (logger?.warn ? logger.warn(`[dsh-remote] ${m}`) : console.warn(`[dsh-remote] ${m}`));
+		this.log = (m) => (logger?.info ? logger.info(`[dsh-remote-control] ${m}`) : console.log(`[dsh-remote-control] ${m}`));
+		this.warn = (m) => (logger?.warn ? logger.warn(`[dsh-remote-control] ${m}`) : console.warn(`[dsh-remote-control] ${m}`));
 		this.stopped = true;
 		this.config = null;
 		this.configMtime = 0;
@@ -403,7 +403,7 @@ export class MailBridge {
 	relayRpc(request) {
 		return rawRequest(`${this.relayOrigin}${RPC_PATH}`, {
 			method: 'POST',
-			headers: { 'content-type': 'application/json', 'x-dsh-remote-token': this.relayToken },
+			headers: { 'content-type': 'application/json', 'x-dsh-remote-control-token': this.relayToken },
 			body: Buffer.from(JSON.stringify(request)),
 			timeout: 60_000,
 		}).then(

@@ -1,9 +1,9 @@
-# dsh-remote-desktop
+# dsh-remote-control-desktop
 
 DSH 远程控制（DSH Remote Control）的**电脑端插件**：让手机 App 通过私有云桶里加密的数据包
 访问本机的 DSH 会话 —— 没有配对码、没有公网隧道、没有第三方服务器。
 
-配套的手机端是一个独立 APK（`out/dsh-remote-1.0.0.apk`），它**只负责连接**，
+配套的手机端是一个独立 APK（`out/dsh-remote-control-1.0.0.apk`），它**只负责连接**，
 没有本机能力。
 
 ---
@@ -38,7 +38,7 @@ pull from-desktop/<seq>.7z  ◄─┘
 4. 点 **测试往返** —— 它会真的往桶里写一个加密包、读回来、再删掉；
 5. 在 APK 里填**完全一样**的 5 项。
 
-前 4 项决定通道 ID（`HMAC-SHA256(appKey, "channel-id|dsh-remote/v2|<bucket>|<cloudFile>")`
+前 4 项决定通道 ID（`HMAC-SHA256(appKey, "channel-id|dsh-remote-control/v2|<bucket>|<cloudFile>")`
 取前 12 位十六进制），密码只用于 7z 加密。两端算出来的通道 ID 相同即连通。
 
 > ⚠️ 不要与 `dsh-jiuling-remote-desktop` 同时启用：两者都要占用本地中继端口
@@ -52,7 +52,7 @@ Windows 默认找 `C:\Program Files\7-Zip\7z.exe`，也可用环境变量
 
 ## 配置与环境变量
 
-配置文件：`$DSH_HOME/dsh-remote/config.json`（权限 0600）。
+配置文件：`$DSH_HOME/dsh-remote-control/config.json`（权限 0600）。
 也可用环境变量覆盖（优先级更高）：
 
 | 变量 | 含义 |
@@ -69,11 +69,11 @@ Windows 默认找 `C:\Program Files\7-Zip\7z.exe`，也可用环境变量
 
 | 路由 | 说明 |
 | --- | --- |
-| `GET /api/dsh-remote/` | 配对设置页（自包含 HTML） |
-| `GET /api/dsh-remote/state` | 配置（密钥打码）+ 运行时状态 |
-| `POST /api/dsh-remote/config` | 保存 5 项，桥立即重载 |
-| `POST /api/dsh-remote/test` | 真跑一遍 7z 往返 |
-| `POST /api/dsh-remote/unbind` | 清空该通道在桶里的对象 |
+| `GET /api/dsh-remote-control/` | 配对设置页（自包含 HTML） |
+| `GET /api/dsh-remote-control/state` | 配置（密钥打码）+ 运行时状态 |
+| `POST /api/dsh-remote-control/config` | 保存 5 项，桥立即重载 |
+| `POST /api/dsh-remote-control/test` | 真跑一遍 7z 往返 |
+| `POST /api/dsh-remote-control/unbind` | 清空该通道在桶里的对象 |
 
 ## 手机端可用的 RPC
 

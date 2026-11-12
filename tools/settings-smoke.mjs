@@ -1,5 +1,5 @@
 /**
- * 电脑端设置接口冒烟测试（`/api/dsh-remote`）。
+ * 电脑端设置接口冒烟测试（`/api/dsh-remote-control`）。
  *
  * 为什么要单独测：这 4 个路由是用户配置电脑端的**唯一入口** —— 它们挂了，
  * 插件就完全没法用，而 DSH 插件本身很难在本机起一个完整实例来验证。
@@ -89,7 +89,7 @@ async function main() {
 	let baseConfig;
 	if (USE_REAL) {
 		const home = process.env.DSH_HOME?.trim() || join(homedir(), '.dsh');
-		baseConfig = JSON.parse(readFileSync(join(home, 'dsh-remote', 'config.json'), 'utf8'));
+		baseConfig = JSON.parse(readFileSync(join(home, 'dsh-remote-control', 'config.json'), 'utf8'));
 	} else {
 		baseConfig = {
 			appKeyId: 'local-key-id',
@@ -100,8 +100,8 @@ async function main() {
 	}
 
 	// 空起步：DSH_HOME 是临时的，配置先不写，让 /state 报「缺 5 项」
-	const home = mkdtempSync(join(tmpdir(), 'dsh-remote-settings-'));
-	mkdirSync(join(home, 'dsh-remote'), { recursive: true });
+	const home = mkdtempSync(join(tmpdir(), 'dsh-remote-control-settings-'));
+	mkdirSync(join(home, 'dsh-remote-control'), { recursive: true });
 	process.env.DSH_HOME = home;
 	for (const key of [
 		'DSH_REMOTE_KEY_ID', 'DSH_REMOTE_APP_KEY', 'DSH_REMOTE_BUCKET',
@@ -116,8 +116,8 @@ async function main() {
 		process.env.DSH_REMOTE_B2_AUTH = `${stub.base}/b2api/v3/b2_authorize_account`;
 	}
 
-	const { createSettingsHandler } = await import('../packages/dsh-remote-desktop/lib/mail7z/settings.js');
-	const { loadConfig, defaultCloudFile } = await import('../packages/dsh-remote-desktop/lib/mail7z/config.js');
+	const { createSettingsHandler } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/settings.js');
+	const { loadConfig, defaultCloudFile } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/config.js');
 
 	let reloads = 0;
 	const bridge = {
@@ -128,7 +128,7 @@ async function main() {
 
 	async function http(method, path, body) {
 		const res = fakeRes();
-		await handle(fakeReq(method, `/api/dsh-remote${path}`, body), res);
+		await handle(fakeReq(method, `/api/dsh-remote-control${path}`, body), res);
 		return res;
 	}
 	const asJson = (res) => {
@@ -228,7 +228,7 @@ async function main() {
 
 	await check('POST /unbind 清空整条通道', async () => {
 		// 先塞两个假对象，确认真的会被删
-		const { B2Client } = await import('../packages/dsh-remote-desktop/lib/mail7z/b2.js');
+		const { B2Client } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/b2.js');
 		const cfg = loadConfig();
 		const client = new B2Client(cfg, () => {});
 		await client.put(`${cfg.channel.root}/from-phone/0000000000001.7z`, Buffer.from('junk'));

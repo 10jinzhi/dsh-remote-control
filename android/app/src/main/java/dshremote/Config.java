@@ -83,7 +83,7 @@ public final class Config {
      * 桶内目录，任一端没跟上就会算出两条互不相通的通道（现象是「发出去了没回音」）。
      * v2 相对 v1 只是把队列目录从 `in/` `out/` 改成 `from-phone/` `from-desktop/`。
      */
-    private static final String PROTO = "dsh-remote/v2";
+    private static final String PROTO = "dsh-remote-control/v2";
 
     /** 通道三元组（与电脑端 `deriveChannel()` 逐字节一致）。 */
     public Channel channel() {

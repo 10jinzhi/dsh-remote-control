@@ -11,7 +11,7 @@ tools/out/
 # 测试日志（每次跑都会重写，且含本机路径/主机名）
 *.log
 
-# 凭据：永远只存在 $DSH_HOME/dsh-remote/config.json，绝不入库
+# 凭据：永远只存在 $DSH_HOME/dsh-remote-control/config.json，绝不入库
 config.json
 b2-credentials.json
 *.state

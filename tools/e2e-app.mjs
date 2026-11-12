@@ -195,7 +195,7 @@ function runJava(jdk, mainClass, args, timeoutMs) {
 async function main() {
 	/*
 	 * 凭据：
-	 *   · --real：复制真机那份 `$DSH_HOME/dsh-remote/config.json` 到临时
+	 *   · --real：复制真机那份 `$DSH_HOME/dsh-remote-control/config.json` 到临时
 	 *     DSH_HOME，只换 cloudFile ⇒ 不碰真通道、不碰真游标；
 	 *   · 默认：本地桩，5 项随便填（B2 客户端只校验非空，通道派生照样算）。
 	 */
@@ -204,7 +204,7 @@ async function main() {
 		const realHome = process.env.DSH_HOME && process.env.DSH_HOME.trim() !== ''
 			? process.env.DSH_HOME.trim()
 			: join(homedir(), '.dsh');
-		const realConfigPath = join(realHome, 'dsh-remote', 'config.json');
+		const realConfigPath = join(realHome, 'dsh-remote-control', 'config.json');
 		try {
 			baseConfig = JSON.parse(readFileSync(realConfigPath, 'utf8'));
 		} catch {
@@ -222,10 +222,10 @@ async function main() {
 		};
 	}
 
-	const home = mkdtempSync(join(tmpdir(), 'dsh-remote-app-'));
-	mkdirSync(join(home, 'dsh-remote'), { recursive: true });
+	const home = mkdtempSync(join(tmpdir(), 'dsh-remote-control-app-'));
+	mkdirSync(join(home, 'dsh-remote-control'), { recursive: true });
 	writeFileSync(
-		join(home, 'dsh-remote', 'config.json'),
+		join(home, 'dsh-remote-control', 'config.json'),
 		`${JSON.stringify({ ...baseConfig, cloudFile: CLOUD_FILE, updatedAt: Date.now() }, null, 2)}\n`,
 	);
 	process.env.DSH_HOME = home;
@@ -244,11 +244,11 @@ async function main() {
 		process.env.DSH_REMOTE_B2_AUTH = `${stub.base}/b2api/v3/b2_authorize_account`;
 	}
 
-	const { loadConfig } = await import('../packages/dsh-remote-desktop/lib/mail7z/config.js');
-	const { B2Client } = await import('../packages/dsh-remote-desktop/lib/mail7z/b2.js');
-	const { Mailbox } = await import('../packages/dsh-remote-desktop/lib/mail7z/mailbox.js');
-	const { packJson, unpackJson, sevenZipPath } = await import('../packages/dsh-remote-desktop/lib/mail7z/sevenz.js');
-	const { MailBridge } = await import('../packages/dsh-remote-desktop/lib/mail7z/bridge.js');
+	const { loadConfig } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/config.js');
+	const { B2Client } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/b2.js');
+	const { Mailbox } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/mailbox.js');
+	const { packJson, unpackJson, sevenZipPath } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/sevenz.js');
+	const { MailBridge } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/bridge.js');
 
 	const loaded = loadConfig();
 	assert.ok(loaded.channel !== null, '配置不完整：需要 keyId / appKey / bucket / cloudFile / password 五项');

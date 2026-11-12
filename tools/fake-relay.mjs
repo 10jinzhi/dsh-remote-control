@@ -57,12 +57,12 @@ export const LIVE_ASSISTANT = {
 export function startFakeRelay({ port, token }) {
 	const server = createServer((req, res) => {
 		const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
-		if (req.headers['x-dsh-remote-token'] !== token) {
+		if (req.headers['x-dsh-remote-control-token'] !== token) {
 			res.writeHead(403, { 'content-type': 'application/json' });
 			res.end(JSON.stringify({ error: 'forbidden' }));
 			return;
 		}
-		if (url.pathname === '/api/dsh-remote/rpc' && req.method === 'POST') {
+		if (url.pathname === '/api/dsh-remote-control/rpc' && req.method === 'POST') {
 			const chunks = [];
 			req.on('data', (c) => chunks.push(c));
 			req.on('end', () => {
@@ -104,7 +104,7 @@ export function startFakeRelay({ port, token }) {
 			});
 			return;
 		}
-		if (url.pathname === '/api/dsh-remote/stream') {
+		if (url.pathname === '/api/dsh-remote-control/stream') {
 			res.writeHead(200, {
 				'content-type': 'text/event-stream; charset=utf-8',
 				'cache-control': 'no-store',
