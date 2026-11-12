@@ -1,0 +1,1241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>DSH 远程控制</title>
+<style>
+	:root {
+		--bg: #0f1115;
+		--surface: #171b22;
+		--surface2: #1f242d;
+		--line: #262d38;
+		--text: #e7ecf3;
+		--muted: #8c97a8;
+		--accent: #4ea1ff;
+		--accent-soft: #1b3350;
+		--ok: #3ddc97;
+		--warn: #ffb84d;
+		--danger: #ff6b6b;
+	}
+
+	* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+	html, body {
+		margin: 0;
+		height: 100%;
+		background: var(--bg);
+		color: var(--text);
+		font: 15px/1.5 -apple-system, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+		overscroll-behavior: none;
+	}
+
+	body { display: flex; flex-direction: column; height: 100dvh; }
+
+	/* ---------------------------------------------------------------- 顶栏 */
+
+	header {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+		background: var(--surface);
+		border-bottom: 1px solid var(--line);
+	}
+
+	header .title {
+		flex: 1 1 auto;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	header .title b {
+		font-weight: 600;
+		font-size: 16px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.dot {
+		width: 9px; height: 9px;
+		border-radius: 50%;
+		background: var(--muted);
+		flex: 0 0 auto;
+		box-shadow: 0 0 0 3px rgba(140, 151, 168, .15);
+		transition: background .2s, box-shadow .2s;
+	}
+	.dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(61, 220, 151, .18); }
+	.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255, 184, 77, .18); }
+	.dot.err { background: var(--danger); box-shadow: 0 0 0 3px rgba(255, 107, 107, .18); }
+
+	/* ---------------------------------------------------------------- 主体 */
+
+	main {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+		padding: 12px;
+	}
+
+	section[hidden] { display: none !important; }
+
+	.card {
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 14px;
+		padding: 14px;
+		margin-bottom: 12px;
+	}
+
+	.card-title {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--muted);
+		letter-spacing: .04em;
+		margin-bottom: 10px;
+	}
+
+	label {
+		display: block;
+		font-size: 12px;
+		color: var(--muted);
+		margin: 10px 0 4px;
+	}
+
+	input, textarea, button {
+		font: inherit;
+		color: var(--text);
+	}
+
+	input[type="text"], input[type="password"], textarea {
+		width: 100%;
+		background: var(--surface2);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 10px 12px;
+		outline: none;
+	}
+	input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
+		border-color: var(--accent);
+	}
+
+	/* 原生 select 的默认外观跟暗色主题打架，去掉箭头自己画一个 */
+	select {
+		width: 100%;
+		background: var(--surface2);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 10px 12px;
+		outline: none;
+		appearance: none;
+		-webkit-appearance: none;
+	}
+
+	button {
+		background: var(--surface2);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 9px 14px;
+		cursor: pointer;
+		transition: opacity .15s, background .15s;
+	}
+	button:active { opacity: .65; }
+	button:disabled { opacity: .4; }
+	button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+	button.danger { color: var(--danger); border-color: rgba(255, 107, 107, .35); }
+	button.mini { padding: 4px 9px; font-size: 12px; border-radius: 8px; vertical-align: middle; }
+	button.icon {
+		background: transparent;
+		border: none;
+		padding: 6px 8px;
+		font-size: 19px;
+		line-height: 1;
+		color: var(--muted);
+	}
+
+	.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+	.row > button { flex: 1 1 auto; }
+
+	.hint { font-size: 12px; color: var(--muted); margin: 10px 0 0; line-height: 1.6; }
+
+	.kv {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 6px 12px;
+		margin: 0;
+		font-size: 13px;
+	}
+	.kv dt { color: var(--muted); white-space: nowrap; }
+	.kv dd { margin: 0; word-break: break-all; font-variant-numeric: tabular-nums; }
+
+	.result {
+		margin-top: 12px;
+		padding: 10px 12px;
+		border-radius: 10px;
+		font-size: 13px;
+		line-height: 1.6;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+	.result.ok { background: rgba(61, 220, 151, .1); color: #a9f2d2; border: 1px solid rgba(61, 220, 151, .25); }
+	.result.bad { background: rgba(255, 107, 107, .1); color: #ffc2c2; border: 1px solid rgba(255, 107, 107, .25); }
+
+	pre.logs {
+		margin: 0;
+		max-height: 40vh;
+		overflow: auto;
+		background: #0b0d11;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 10px;
+		font: 11.5px/1.65 ui-monospace, "Cascadia Mono", Consolas, monospace;
+		color: #9fb0c6;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
+
+	/* ---------------------------------------------------------------- 会话列表 */
+
+	.ws-title {
+		font-size: 12px;
+		color: var(--muted);
+		margin: 14px 4px 6px;
+		letter-spacing: .03em;
+	}
+
+	.thread {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 12px;
+		padding: 12px 14px;
+		margin-bottom: 8px;
+	}
+	.thread:active { opacity: .7; }
+	.thread .t-main { flex: 1 1 auto; min-width: 0; }
+	.thread .t-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.thread .t-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+	.thread .pin { font-size: 11px; color: var(--warn); }
+
+	.empty {
+		text-align: center;
+		color: var(--muted);
+		font-size: 13px;
+		padding: 40px 20px;
+		line-height: 1.8;
+	}
+
+	/* ---------------------------------------------------------------- 气泡 */
+
+	#view-chat { padding: 0; }
+
+	.bubbles {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 12px 12px 4px;
+	}
+
+	.bubble {
+		max-width: 88%;
+		padding: 9px 12px;
+		border-radius: 14px;
+		font-size: 14.5px;
+		line-height: 1.62;
+		white-space: pre-wrap;
+		word-break: break-word;
+		align-self: flex-start;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-top-left-radius: 5px;
+	}
+	.bubble.user {
+		align-self: flex-end;
+		background: var(--accent-soft);
+		border-color: #27425f;
+		border-top-left-radius: 14px;
+		border-top-right-radius: 5px;
+	}
+	.bubble.live { border-style: dashed; color: #cfe0f5; }
+	.bubble.live::after {
+		content: "▍";
+		color: var(--accent);
+		animation: blink 1s steps(2, start) infinite;
+	}
+	@keyframes blink { 50% { opacity: 0; } }
+
+	.tool-line {
+		align-self: flex-start;
+		font: 12px/1.6 ui-monospace, Consolas, monospace;
+		color: var(--muted);
+		background: rgba(255, 255, 255, .03);
+		border: 1px dashed var(--line);
+		border-radius: 8px;
+		padding: 3px 9px;
+		max-width: 88%;
+	}
+
+	.busy {
+		align-self: flex-start;
+		color: var(--muted);
+		font-size: 12.5px;
+		display: flex;
+		align-items: center;
+		gap: 7px;
+	}
+	.spinner {
+		width: 12px; height: 12px;
+		border: 2px solid var(--line);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: spin .8s linear infinite;
+	}
+	@keyframes spin { to { transform: rotate(360deg); } }
+
+	/* ---------------------------------------------------------------- 输入栏 */
+
+	footer {
+		flex: 0 0 auto;
+		display: flex;
+		gap: 8px;
+		align-items: flex-end;
+		padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+		background: var(--surface);
+		border-top: 1px solid var(--line);
+	}
+	footer[hidden] { display: none !important; }
+	footer textarea {
+		flex: 1 1 auto;
+		resize: none;
+		max-height: 34vh;
+		line-height: 1.5;
+	}
+	footer button { flex: 0 0 auto; height: 40px; }
+
+	/* ---------------------------------------------------------------- 审批弹层 */
+
+	.modal {
+		position: fixed;
+		inset: 0;
+		background: rgba(0, 0, 0, .62);
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		padding: 16px;
+		z-index: 20;
+	}
+	.modal[hidden] { display: none !important; }
+
+	.sheet {
+		width: 100%;
+		max-width: 520px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 16px;
+		padding: 16px;
+		margin-bottom: env(safe-area-inset-bottom);
+	}
+	.sheet h3 { margin: 0 0 8px; font-size: 15px; }
+	.sheet pre {
+		margin: 0;
+		max-height: 34vh;
+		overflow: auto;
+		background: #0b0d11;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		padding: 10px;
+		font: 12px/1.6 ui-monospace, Consolas, monospace;
+		white-space: pre-wrap;
+		word-break: break-all;
+		color: #b8c6d9;
+	}
+	.sheet .row { margin-top: 12px; }
+
+	.toast {
+		position: fixed;
+		left: 50%;
+		bottom: calc(84px + env(safe-area-inset-bottom));
+		transform: translateX(-50%) translateY(8px);
+		background: #232a35;
+		border: 1px solid var(--line);
+		color: var(--text);
+		font-size: 13px;
+		padding: 8px 14px;
+		border-radius: 999px;
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity .2s, transform .2s;
+		z-index: 30;
+		max-width: 86vw;
+		text-align: center;
+	}
+	.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+	<button id="btnBack" class="icon" hidden>←</button>
+	<div class="title">
+		<span id="dot" class="dot"></span>
+		<b id="titleText">连接</b>
+	</div>
+	<button id="btnGear" class="icon">⚙</button>
+</header>
+
+<main id="main">
+
+	<!-- ------------------------------------------------ 连接 / 设置 -->
+	<section id="view-connect">
+		<div class="card">
+			<div class="card-title">电脑 <button id="btnAddComputer" class="mini">＋ 新增</button></div>
+			<select id="f-computer"></select>
+			<div class="row">
+				<button id="btnRenameComputer">重命名</button>
+				<button id="btnDelComputer" class="danger">删除</button>
+			</div>
+			<p class="hint">
+				一台手机可以连多台电脑。每台有自己的一组 5 项、自己的收发游标，
+				互不影响 —— 切过去就是另一台机器的会话。
+			</p>
+		</div>
+
+		<div class="card">
+			<div class="card-title">配对信息</div>
+
+			<label for="f-keyid">Application Key ID</label>
+			<input id="f-keyid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="005f0000000000000000000aa">
+
+			<label for="f-appkey">Application Key</label>
+			<input id="f-appkey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="K005…">
+
+			<label for="f-bucket">Bucket 名称</label>
+			<input id="f-bucket" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-dsh-bucket">
+
+			<label for="f-cloud">云端文件名</label>
+			<input id="f-cloud" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="dsh-remote">
+
+			<label for="f-pwd">加密密码（7z）</label>
+			<input id="f-pwd" type="password" autocomplete="off" spellcheck="false" placeholder="与电脑端填同一个密码">
+
+			<p class="hint">
+				五项与电脑端「设置 → 远程控制」逐字一致。前四项决定通道 ID，
+				密码只用于 7z 加密 —— 换密码不影响配对，但两端必须相同，否则解不开。
+			</p>
+
+			<div class="row">
+				<button id="btnSave" class="primary">保存并连接</button>
+				<button id="btnTest">测试往返</button>
+			</div>
+			<div id="testResult" class="result" hidden></div>
+		</div>
+
+		<div class="card">
+			<div class="card-title">状态</div>
+			<dl class="kv" id="kv">
+				<dt>电脑</dt><dd id="v-computer">—</dd>
+				<dt>通道</dt><dd id="v-channel">—</dd>
+				<dt>指纹</dt><dd id="v-fingerprint">—</dd>
+				<dt>电脑</dt><dd id="v-link">—</dd>
+				<dt>最近回应</dt><dd id="v-seen">—</dd>
+				<dt>收发</dt><dd id="v-stats">—</dd>
+			</dl>
+			<div class="row">
+				<button id="btnReconnect">重连</button>
+				<button id="btnStop">断开</button>
+				<button id="btnUnbind" class="danger">清空通道</button>
+			</div>
+		</div>
+
+		<div class="card">
+			<div class="card-title">日志 <button id="btnCopyLogs" class="mini">复制</button></div>
+			<pre class="logs" id="logs"></pre>
+		</div>
+	</section>
+
+	<!-- ------------------------------------------------ 会话列表 -->
+	<section id="view-list" hidden>
+		<div class="row" style="margin-top:0">
+			<button id="btnRefresh">刷新列表</button>
+		</div>
+		<div id="workspaces"></div>
+	</section>
+
+	<!-- ------------------------------------------------ 聊天 -->
+	<section id="view-chat" hidden>
+		<div class="bubbles" id="bubbles"></div>
+	</section>
+
+</main>
+
+<footer id="composer" hidden>
+	<textarea id="input" rows="1" placeholder="给电脑发消息…" enterkeyhint="send"></textarea>
+	<button id="btnSend" class="primary">发送</button>
+	<button id="btnCancel" class="danger" hidden>停止</button>
+</footer>
+
+<div id="nameModal" class="modal" hidden>
+	<div class="sheet">
+		<h3 id="nameTitle">给这台电脑起个名字</h3>
+		<input id="nameInput" type="text" autocomplete="off" placeholder="例如：书房台式机">
+		<div class="row">
+			<button id="nameOk" class="primary">确定</button>
+			<button id="nameCancel">取消</button>
+		</div>
+	</div>
+</div>
+
+<div id="askModal" class="modal" hidden>
+	<div class="sheet">
+		<h3>电脑在等你确认</h3>
+		<pre id="askText"></pre>
+		<div class="row" id="askOptions"></div>
+		<div class="row"><button id="askClose">稍后再说</button></div>
+	</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* =====================================================================
+ * 与原生的约定（见 dshremote/ui/UiBridge.java）
+ *
+ *   Android.invoke(id, method, argsJson)   发一个请求，立刻返回
+ *   window.__nativeResult(id, json)        请求的应答（id 为空 = 主动推的状态）
+ *   window.__nativeEvent(kind, json)       链路事件：state / frame / log
+ *   window.__onBack()                      返回键：true 表示页面自己消化了
+ *
+ * 帧（frame）的形状由电脑端 render.js 决定，这里只负责画：
+ *   {op:'add', role, text, seq, tools}   追加气泡
+ *   {op:'live', text}                    流式增量，拼到「正在说」的那个气泡
+ *   {op:'live-reset'}                    当前流式块结束，清掉临时气泡
+ *   {op:'busy', busy}                    转圈
+ *   {op:'tool', name}                    一行灰字「用了什么工具」
+ * ===================================================================== */
+
+const $ = (id) => document.getElementById(id);
+const state = {
+	config: {},
+	profiles: { active: '', list: [] },
+	link: { connected: false, message: '未连接', lastDeskSeenAt: 0, lastError: '' },
+	running: false,
+	view: 'connect',
+	threads: null,
+	chat: { sessionId: '', title: '', cursor: -1, items: [], live: '', busy: false },
+	ask: null,
+	logs: [],
+};
+
+/* ---------------------------------------------------------------- 调用原生 */
+
+let callSeq = 0;
+const pending = new Map();
+
+function call(method, args) {
+	return new Promise((resolve, reject) => {
+		if (typeof window.Android === 'undefined') {
+			reject(new Error('原生接口不可用'));
+			return;
+		}
+		const id = 'c' + (++callSeq);
+		pending.set(id, { resolve, reject });
+		try {
+			window.Android.invoke(id, method, JSON.stringify(args || {}));
+		} catch (error) {
+			pending.delete(id);
+			reject(error);
+		}
+		// 网络动作最坏 30 秒；卡住就报错，别让界面一直转
+		setTimeout(() => {
+			if (pending.has(id)) {
+				pending.delete(id);
+				reject(new Error(method + ' 超时'));
+			}
+		}, 40000);
+	});
+}
+
+window.__nativeResult = function (id, json) {
+	let payload = {};
+	try { payload = JSON.parse(json || '{}'); } catch (e) { payload = { ok: false, error: '返回数据损坏' }; }
+	if (!id) {
+		// 主动推的状态（服务刚绑上时补一条）
+		if (payload.config) applyState(payload);
+		return;
+	}
+	const waiter = pending.get(id);
+	if (!waiter) return;
+	pending.delete(id);
+	if (payload.ok === false) waiter.reject(new Error(payload.error || '调用失败'));
+	else waiter.resolve(payload);
+};
+
+window.__nativeEvent = function (kind, json) {
+	let data = {};
+	try { data = JSON.parse(json || '{}'); } catch (e) { return; }
+	if (kind === 'state') applyLink(data);
+	else if (kind === 'log') pushLog(data.text);
+	else if (kind === 'frame') onFrame(data);
+};
+
+/* ---------------------------------------------------------------- 状态 */
+
+function applyState(payload) {
+	state.config = payload.config || {};
+	state.link = payload.link || state.link;
+	state.running = payload.running === true;
+	if (payload.profiles) state.profiles = payload.profiles;
+	if (Array.isArray(payload.logs)) {
+		state.logs = payload.logs.slice(-300);
+		renderLogs();
+	}
+	renderComputers();
+	fillForm();
+	renderStatus();
+}
+
+/**
+ * 重画「电脑」下拉。
+ *
+ * 未配置完的档案在名字后面标一下 —— 否则用户切过去看到空表单，会以为
+ * 自己把配置删没了。
+ */
+function renderComputers() {
+	const sel = $('f-computer');
+	const list = state.profiles.list || [];
+	sel.innerHTML = '';
+	for (const item of list) {
+		const opt = document.createElement('option');
+		opt.value = item.id;
+		opt.textContent = item.name + (item.complete ? '' : '（待配置）');
+		sel.appendChild(opt);
+	}
+	if (state.profiles.active) sel.value = state.profiles.active;
+}
+
+function currentProfile() {
+	const list = state.profiles.list || [];
+	const active = state.profiles.active || '';
+	return list.find((item) => item.id === active) || list[0] || null;
+}
+
+function applyLink(link) {
+	state.link = Object.assign({}, state.link, link);
+	renderStatus();
+}
+
+function fillForm() {
+	const c = state.config;
+	setValue('f-keyid', c.appKeyId || '');
+	setValue('f-bucket', c.bucket || '');
+	setValue('f-cloud', c.cloudFile || '');
+	$('f-appkey').placeholder = c.hasAppKey ? '已保存（留空不改）' : 'K005…';
+	$('f-pwd').placeholder = c.hasPassword ? '已保存（留空不改）' : '与电脑端填同一个密码';
+}
+
+function setValue(id, value) {
+	const el = $(id);
+	if (document.activeElement !== el) el.value = value;
+}
+
+function renderStatus() {
+	const c = state.config;
+	const link = state.link;
+	const complete = (c.missing || []).length === 0;
+
+	const me = currentProfile();
+	$('v-computer').textContent = me
+		? (me.name + (me.cloudFile ? ' · ' + me.cloudFile : ''))
+		: '—';
+	$('v-channel').textContent = c.channel || '—';
+	$('v-fingerprint').textContent = c.fingerprint || '—';
+
+	let linkText;
+	if (!complete) linkText = '还差 ' + (c.missing || []).join('、');
+	else if (link.lastError) linkText = '出错：' + link.lastError;
+	else linkText = link.connected ? '已连接（' + (link.message || '在线') + '）' : (link.message || '等待中');
+	$('v-link').textContent = linkText;
+
+	const seen = link.lastDeskSeenAt || 0;
+	$('v-seen').textContent = seen > 0 ? ago(seen) : '—';
+
+	$('v-stats').textContent = state.running ? '通道运行中' : '未运行';
+
+	const dot = $('dot');
+	dot.className = 'dot';
+	if (!complete) dot.classList.add('warn');
+	else if (link.connected) dot.classList.add('on');
+	else if (link.lastError) dot.classList.add('err');
+	else dot.classList.add('warn');
+
+	const computerName = me ? me.name : '';
+	$('titleText').textContent = state.view === 'connect'
+		? (link.connected
+			? '已连接' + (computerName ? ' · ' + computerName : '电脑')
+			: (computerName || 'DSH 远程控制'))
+		: (state.chat.title || '对话');
+}
+
+/* ---------------------------------------------------------------- 日志 */
+
+function pushLog(line) {
+	if (!line) return;
+	state.logs.push(line);
+	if (state.logs.length > 300) state.logs.splice(0, state.logs.length - 300);
+	renderLogs();
+}
+
+function renderLogs() {
+	const box = $('logs');
+	const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+	box.textContent = state.logs.join('\n');
+	if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+/* ---------------------------------------------------------------- 视图切换 */
+
+function show(view) {
+	state.view = view;
+	$('view-connect').hidden = view !== 'connect';
+	$('view-list').hidden = view !== 'list';
+	$('view-chat').hidden = view !== 'chat';
+	$('composer').hidden = view !== 'chat';
+	$('btnBack').hidden = view === 'connect';
+	$('btnGear').hidden = view === 'connect';
+	renderStatus();
+	if (view !== 'chat') $('main').scrollTop = 0;
+}
+
+window.__onBack = function () {
+	if (state.view === 'chat' || state.view === 'list') {
+		if (state.chat.sessionId) {
+			call('unsubscribe', { sessionId: state.chat.sessionId }).catch(() => {});
+			state.chat = { sessionId: '', title: '', cursor: -1, items: [], live: '', busy: false };
+		}
+		show('list');
+		loadThreads();
+		return true;
+	}
+	return false;
+};
+
+/* ---------------------------------------------------------------- 会话列表 */
+
+async function loadThreads() {
+	const box = $('workspaces');
+	box.innerHTML = '<div class="empty">正在读取电脑上的对话…</div>';
+	let payload;
+	try {
+		payload = await call('threads', {});
+	} catch (error) {
+		box.innerHTML = '<div class="empty">读不到列表：' + esc(error.message) + '</div>';
+		return;
+	}
+	const workspaces = (payload.data && payload.data.workspaces) || [];
+	if (workspaces.length === 0) {
+		box.innerHTML = '<div class="empty">电脑上还没有工作区。<br>先在 DSH 里打开一个项目。</div>';
+		return;
+	}
+	const html = [];
+	for (const ws of workspaces) {
+		html.push('<div class="ws-title">' + esc(ws.title || ws.path || '未命名工作区') + '</div>');
+		const sessions = ws.sessions || [];
+		if (sessions.length === 0) {
+			html.push('<div class="empty" style="padding:14px">这个工作区还没有对话</div>');
+			continue;
+		}
+		for (const s of sessions) {
+			const when = s.updatedAt ? ago(s.updatedAt) : '';
+			html.push(
+				'<div class="thread" data-id="' + esc(s.id) + '" data-title="' + esc(s.title || '') + '">' +
+				'<div class="t-main">' +
+				'<div class="t-title">' + (s.pinned ? '<span class="pin">📌 </span>' : '') + esc(s.title || '（未命名对话）') + '</div>' +
+				'<div class="t-meta">' + esc(when) + '</div>' +
+				'</div><div class="t-meta">›</div></div>'
+			);
+		}
+		html.push(
+			'<div class="row" style="margin:6px 0 4px">' +
+			'<button class="mini" data-new="' + esc(ws.path) + '">在这个工作区开新对话</button></div>'
+		);
+	}
+	box.innerHTML = html.join('');
+	box.querySelectorAll('.thread').forEach((el) => {
+		el.addEventListener('click', () => openThread(el.dataset.id, el.dataset.title));
+	});
+	box.querySelectorAll('button[data-new]').forEach((el) => {
+		el.addEventListener('click', () => newThread(el.dataset.new));
+	});
+}
+
+async function newThread(cwd) {
+	if (!cwd) return;
+	try {
+		const payload = await call('newthread', { cwd });
+		toast('已开新对话');
+		await openThread(payload.data.sessionId, '新对话');
+	} catch (error) {
+		toast('开新对话失败：' + error.message);
+	}
+}
+
+async function openThread(sessionId, title) {
+	if (!sessionId) return;
+	state.chat = { sessionId, title: title || '', cursor: -1, items: [], live: '', busy: false };
+	show('chat');
+	$('bubbles').innerHTML = '<div class="empty">正在拉取历史…</div>';
+
+	let payload;
+	try {
+		payload = await call('thread', { sessionId });
+	} catch (error) {
+		$('bubbles').innerHTML = '<div class="empty">打不开：' + esc(error.message) + '</div>';
+		return;
+	}
+	const data = payload.data || {};
+	state.chat.title = data.title || title || '对话';
+	state.chat.cursor = typeof data.cursor === 'number' ? data.cursor : -1;
+	state.chat.items = (data.bubbles || []).map((b) => ({
+		role: b.role || 'assistant',
+		text: b.text || '',
+		tools: b.tools || [],
+	}));
+	renderBubbles();
+	renderStatus();
+
+	// 订阅实时事件：从历史游标往后接，不重不漏
+	call('subscribe', { sessionId, fromSeq: state.chat.cursor }).catch((error) => {
+		toast('订阅失败：' + error.message);
+	});
+}
+
+/* ---------------------------------------------------------------- 帧处理 */
+
+function onFrame(frame) {
+	if (!frame || typeof frame !== 'object') return;
+
+	if (frame.kind === 'hb') {
+		state.link.connected = true;
+		state.link.lastDeskSeenAt = frame.at || Date.now();
+		renderStatus();
+		return;
+	}
+
+	if (frame.kind === 'ask') {
+		showAsk(frame);
+		return;
+	}
+
+	if (frame.kind !== 'ev') return;
+	if (frame.sessionId && state.chat.sessionId && frame.sessionId !== state.chat.sessionId) return;
+
+	for (const item of frame.items || []) onItem(item);
+	renderBubbles();
+}
+
+function onItem(item) {
+	const chat = state.chat;
+	switch (item.op) {
+		case 'add':
+			// 同一条回答可能先以流式出现、后以 durable 消息到达：先把临时气泡收掉
+			chat.live = '';
+			chat.items.push({
+				role: item.role || 'assistant',
+				text: item.text || '',
+				tools: item.tools || [],
+			});
+			break;
+		case 'tool':
+			chat.items.push({ role: 'tool', text: item.name || 'tool' });
+			break;
+		case 'live':
+			chat.live += item.text || '';
+			break;
+		case 'live-reset':
+			chat.live = '';
+			break;
+		case 'busy':
+			chat.busy = item.busy === true;
+			break;
+		default:
+			break;
+	}
+}
+
+function renderBubbles() {
+	const chat = state.chat;
+	const box = $('bubbles');
+	const atBottom = $('main').scrollTop + $('main').clientHeight >= $('main').scrollHeight - 60;
+
+	const html = [];
+	// 只画最后 200 条：手机上看不到那么远，画多了白耗电
+	for (const item of chat.items.slice(-200)) {
+		if (item.role === 'tool') {
+			html.push('<div class="tool-line">⚙ ' + esc(item.text) + '</div>');
+			continue;
+		}
+		const cls = item.role === 'user' ? 'bubble user' : 'bubble';
+		html.push('<div class="' + cls + '">' + esc(item.text) + '</div>');
+	}
+	if (chat.live) html.push('<div class="bubble live">' + esc(chat.live) + '</div>');
+	if (chat.busy) html.push('<div class="busy"><span class="spinner"></span>电脑正在处理…</div>');
+	box.innerHTML = html.join('') || '<div class="empty">还没有消息</div>';
+
+	$('btnCancel').hidden = !chat.busy;
+	$('btnSend').hidden = chat.busy;
+	if (atBottom) $('main').scrollTop = $('main').scrollHeight;
+}
+
+/* ---------------------------------------------------------------- 审批 */
+
+function showAsk(frame) {
+	const p = frame.payload || {};
+	const text = p.question || p.prompt || p.title
+		|| (typeof p === 'string' ? p : JSON.stringify(p, null, 2));
+	$('askText').textContent = String(text || '（没有说明）');
+
+	// 选项可能是 ['allowed-once','rejected']，也可能是 [{value,label}]
+	const raw = Array.isArray(p.options) ? p.options : [];
+	const options = raw.length > 0
+		? raw.map((o) => (typeof o === 'string' ? { value: o, label: labelOf(o) } : { value: o.value || o.id, label: o.label || o.title || String(o.value || o.id) }))
+		: [{ value: 'allowed-once', label: '允许一次' }, { value: 'rejected', label: '拒绝' }];
+
+	const box = $('askOptions');
+	box.innerHTML = '';
+	for (const opt of options) {
+		const btn = document.createElement('button');
+		btn.textContent = opt.label;
+		btn.className = opt.value === 'rejected' ? 'danger' : 'primary';
+		btn.addEventListener('click', () => answerAsk(frame.requestId, opt.value));
+		box.appendChild(btn);
+	}
+	state.ask = frame;
+	$('askModal').hidden = false;
+}
+
+function labelOf(value) {
+	const table = {
+		'allowed-once': '允许一次',
+		'allowed-always': '以后都允许',
+		'rejected': '拒绝',
+		'denied': '拒绝',
+		'approved': '同意',
+		'cancel': '取消',
+	};
+	return table[value] || String(value);
+}
+
+async function answerAsk(requestId, answer) {
+	$('askModal').hidden = true;
+	state.ask = null;
+	try {
+		await call('answer', { requestId, answer });
+		toast('已回复电脑');
+	} catch (error) {
+		toast('回复失败：' + error.message);
+	}
+}
+
+/* ---------------------------------------------------------------- 动作 */
+
+async function saveConfig() {
+	const btn = $('btnSave');
+	btn.disabled = true;
+	try {
+		const payload = await call('save', {
+			appKeyId: $('f-keyid').value.trim(),
+			appKey: $('f-appkey').value,
+			bucket: $('f-bucket').value.trim(),
+			cloudFile: $('f-cloud').value.trim(),
+			password: $('f-pwd').value,
+		});
+		$('f-appkey').value = '';
+		$('f-pwd').value = '';
+		state.config = payload.config || state.config;
+		fillForm();
+		renderStatus();
+		const missing = state.config.missing || [];
+		toast(missing.length === 0 ? '已保存，正在连接电脑…' : '还差：' + missing.join('、'));
+	} catch (error) {
+		toast('保存失败：' + error.message);
+	} finally {
+		btn.disabled = false;
+	}
+}
+
+async function runTest() {
+	const btn = $('btnTest');
+	const box = $('testResult');
+	btn.disabled = true;
+	box.hidden = false;
+	box.className = 'result';
+	box.textContent = '正在往桶里写一个加密包再读回来…';
+	try {
+		const payload = await call('test', {});
+		const d = payload.data || {};
+		box.className = 'result ok';
+		box.textContent =
+			'往返正常 ✓\n' +
+			'耗时 ' + d.ms + 'ms（上传 ' + d.putMs + 'ms）\n' +
+			'7z 包 ' + d.bytes + ' 字节，原文 ' + d.rawBytes + ' 字节\n' +
+			'通道 ' + d.channel + '（指纹 ' + d.fingerprint + '）\n' +
+			(d.deleted ? '测试对象已删除' : '⚠️ 测试对象没删掉（key 没有删权限？）');
+	} catch (error) {
+		box.className = 'result bad';
+		box.textContent = '失败 ✗\n' + error.message;
+	} finally {
+		btn.disabled = false;
+	}
+}
+
+async function sendMessage() {
+	const input = $('input');
+	const text = input.value.trim();
+	if (text === '' || !state.chat.sessionId) return;
+	input.value = '';
+	autoGrow();
+	// 先把本地气泡画出来：不等往返，手机上就不会有「点了没反应」的感觉
+	state.chat.items.push({ role: 'user', text, tools: [] });
+	state.chat.busy = true;
+	renderBubbles();
+	try {
+		await call('send', { sessionId: state.chat.sessionId, text });
+	} catch (error) {
+		state.chat.busy = false;
+		renderBubbles();
+		toast('发送失败：' + error.message);
+	}
+}
+
+async function cancelTurn() {
+	try {
+		await call('cancel', { sessionId: state.chat.sessionId });
+		toast('已请求停止');
+	} catch (error) {
+		toast('停止失败：' + error.message);
+	}
+}
+
+/* ---------------------------------------------------------------- 起名 / 二次确认 */
+
+/*
+ * 起名和「确认删除」都用自绘弹层，不用 prompt() / confirm()。
+ *
+ * 原因很硬：MainActivity 没有挂 WebChromeClient，而 WebView 在缺少它的
+ * 时候会**直接取消** JS 的 confirm/prompt（confirm 恒返回 false）。
+ * 换句话说，用原生对话框写的「清空通道」在真机上一直是哑的 —— 点了没
+ * 反应，也不报错。自绘反而更可靠，顺便还能统一样式。
+ */
+let nameResolve = null;
+
+function askName(title, value, run) {
+	$('nameTitle').textContent = title;
+	$('nameInput').value = value || '';
+	nameResolve = run;
+	$('nameModal').hidden = false;
+}
+
+async function submitName() {
+	const run = nameResolve;
+	nameResolve = null;
+	$('nameModal').hidden = true;
+	if (typeof run !== 'function') return;
+	try {
+		const payload = await run($('nameInput').value.trim());
+		if (payload) applyState(payload);
+	} catch (error) {
+		toast('操作失败：' + error.message);
+	}
+}
+
+/** 危险动作点两次才执行（第二次要在 4 秒内）。 */
+function armed(btn, armedText, idleText, run) {
+	if (btn.classList.contains('armed')) {
+		btn.classList.remove('armed');
+		btn.textContent = idleText;
+		clearTimeout(btn.__armTimer);
+		run();
+		return;
+	}
+	btn.classList.add('armed');
+	btn.textContent = armedText;
+	clearTimeout(btn.__armTimer);
+	btn.__armTimer = setTimeout(() => {
+		btn.classList.remove('armed');
+		btn.textContent = idleText;
+	}, 4000);
+}
+
+/* ---------------------------------------------------------------- 小工具 */
+
+function esc(text) {
+	return String(text == null ? '' : text)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
+function ago(at) {
+	if (!at) return '—';
+	const diff = Date.now() - at;
+	if (diff < 8_000) return '刚刚';
+	if (diff < 60_000) return Math.floor(diff / 1000) + ' 秒前';
+	if (diff < 3_600_000) return Math.floor(diff / 60_000) + ' 分钟前';
+	if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + ' 小时前';
+	return Math.floor(diff / 86_400_000) + ' 天前';
+}
+
+let toastTimer = null;
+function toast(text) {
+	const el = $('toast');
+	el.textContent = text;
+	el.classList.add('show');
+	clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+function autoGrow() {
+	const el = $('input');
+	el.style.height = 'auto';
+	el.style.height = Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.34)) + 'px';
+}
+
+/* ---------------------------------------------------------------- 绑定 */
+
+$('btnBack').addEventListener('click', () => window.__onBack());
+
+$('btnGear').addEventListener('click', () => {
+	show('list');
+	loadThreads();
+});
+
+$('btnSave').addEventListener('click', saveConfig);
+$('btnTest').addEventListener('click', runTest);
+
+$('f-computer').addEventListener('change', async () => {
+	const id = $('f-computer').value;
+	if (!id || id === state.profiles.active) return;
+	try {
+		const payload = await call('profileSelect', { id });
+		applyState(payload);
+		const me = currentProfile();
+		toast('已切到「' + (me ? me.name : '电脑') + '」');
+	} catch (error) {
+		toast('切换失败：' + error.message);
+	}
+});
+
+$('btnAddComputer').addEventListener('click', () => {
+	askName('新增电脑', '', (name) => call('profileNew', { name }));
+});
+
+$('btnRenameComputer').addEventListener('click', () => {
+	const me = currentProfile();
+	if (!me) return;
+	askName('重命名', me.name, (name) => call('profileRename', { id: me.id, name }));
+});
+
+$('btnDelComputer').addEventListener('click', () => {
+	const me = currentProfile();
+	if (!me) return;
+	armed($('btnDelComputer'), '确认删除？', '删除', async () => {
+		try {
+			const payload = await call('profileDelete', { id: me.id });
+			applyState(payload);
+			toast('已删除「' + me.name + '」');
+		} catch (error) {
+			toast('删除失败：' + error.message);
+		}
+	});
+});
+
+$('nameOk').addEventListener('click', submitName);
+$('nameCancel').addEventListener('click', () => {
+	$('nameModal').hidden = true;
+	nameResolve = null;
+});
+$('nameInput').addEventListener('keydown', (event) => {
+	if (event.key === 'Enter') {
+		event.preventDefault();
+		submitName();
+	}
+});
+
+$('btnReconnect').addEventListener('click', async () => {
+	try {
+		await call('linkStart', {});
+		toast('已请求重连');
+	} catch (error) {
+		toast('重连失败：' + error.message);
+	}
+});
+
+$('btnStop').addEventListener('click', async () => {
+	try {
+		await call('linkStop', {});
+		toast('已断开');
+	} catch (error) {
+		toast('断开失败：' + error.message);
+	}
+});
+
+$('btnUnbind').addEventListener('click', () => {
+	armed($('btnUnbind'), '确认清空？', '清空通道', async () => {
+		try {
+			const payload = await call('unbind', {});
+			toast('已删除 ' + payload.deleted + ' 个对象');
+		} catch (error) {
+			toast('清空失败：' + error.message);
+		}
+	});
+});
+
+$('btnCopyLogs').addEventListener('click', () => {
+	const area = document.createElement('textarea');
+	area.value = state.logs.join('\n');
+	document.body.appendChild(area);
+	area.select();
+	let done = false;
+	try { done = document.execCommand('copy'); } catch (e) { done = false; }
+	document.body.removeChild(area);
+	toast(done ? '日志已复制' : '复制失败，长按日志手动选择');
+});
+
+$('btnRefresh').addEventListener('click', loadThreads);
+$('btnSend').addEventListener('click', sendMessage);
+$('btnCancel').addEventListener('click', cancelTurn);
+$('askClose').addEventListener('click', () => { $('askModal').hidden = true; state.ask = null; });
+
+$('input').addEventListener('input', autoGrow);
+$('input').addEventListener('keydown', (event) => {
+	if (event.key === 'Enter' && !event.shiftKey) {
+		event.preventDefault();
+		sendMessage();
+	}
+});
+
+/* ---------------------------------------------------------------- 启动 */
+
+(function boot() {
+	show('connect');
+	// 状态每秒刷新一次「最近回应」的相对时间
+	setInterval(() => { if (state.view === 'connect') renderStatus(); }, 5000);
+	try {
+		if (typeof window.Android !== 'undefined' && window.Android.ready) window.Android.ready();
+	} catch (error) { /* 原生还没挂上：等服务绑定后会再推一次 */ }
+})();
+</script>
+</body>
+</html>

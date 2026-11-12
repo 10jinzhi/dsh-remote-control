@@ -1,0 +1,85 @@
+# dsh-remote-desktop
+
+DSH 远程控制（DSH Remote Control）的**电脑端插件**：让手机 App 通过私有云桶里加密的数据包
+访问本机的 DSH 会话 —— 没有配对码、没有公网隧道、没有第三方服务器。
+
+配套的手机端是一个独立 APK（`out/dsh-remote-1.0.0.apk`），它**只负责连接**，
+没有本机能力。
+
+---
+
+## 它做什么
+
+```
+手机 APK                                   本机 DSH
+────────                                   ────────
+put  in/<seq>.7z   ──┐
+                     ├── Backblaze B2 私有桶（只有密文）
+pull out/<seq>.7z  ◄─┘
+                                            │  桥（本插件）
+                                            ▼
+                                127.0.0.1:17890 中继 → 会话引擎
+```
+
+- **两条队列**：手机只写 `in/`，电脑只写 `out/`。每侧一个生产者、序号单调递增，
+  于是不需要锁、不需要 CAS、不需要处理版本冲突。
+- **每次都是 7z**：`in/`、`out/` 里的每个对象都是标准 7z（AES-256 + LZMA），
+  密码两端各存一份、不进桶。
+- **事件在电脑侧渲染**：桥替你订阅中继的 SSE，把事件折成「气泡」再打包发出，
+  所以 APK 里没有 DSH 知识 —— 升级 DSH 不用重装 APK。
+
+## 安装
+
+1. 把本目录放进 DSH 的插件目录（或 `dsh plugin add <zip>`），重启 DSH；
+2. 打开 **设置 → DSH 远程控制**；
+3. 填 5 项：`Application Key ID` / `Application Key` / `Bucket 名称` / `云端文件名` /
+   `加密密码`；
+4. 点 **测试往返** —— 它会真的往桶里写一个加密包、读回来、再删掉；
+5. 在 APK 里填**完全一样**的 5 项。
+
+前 4 项决定通道 ID（`HMAC-SHA256(appKey, "channel-id|dsh-remote/v1|<bucket>|<cloudFile>")`
+取前 12 位十六进制），密码只用于 7z 加密。两端算出来的通道 ID 相同即连通。
+
+> ⚠️ 不要与 `dsh-jiuling-remote-desktop` 同时启用：两者都要占用本地中继端口
+> `17890`。
+
+## 依赖
+
+零第三方依赖（Node 内置模块 + 系统里的 `7z` 可执行文件）。
+Windows 默认找 `C:\Program Files\7-Zip\7z.exe`，也可用环境变量
+`DSH_REMOTE_7Z` 指定。
+
+## 配置与环境变量
+
+配置文件：`$DSH_HOME/dsh-remote/config.json`（权限 0600）。
+也可用环境变量覆盖（优先级更高）：
+
+| 变量 | 含义 |
+| --- | --- |
+| `DSH_REMOTE_KEY_ID` | Application Key ID |
+| `DSH_REMOTE_APP_KEY` | Application Key |
+| `DSH_REMOTE_BUCKET` | Bucket 名称 |
+| `DSH_REMOTE_CLOUD_FILE` | 云端文件名（通道盐） |
+| `DSH_REMOTE_PASSWORD` | 7z 密码 |
+| `DSH_REMOTE_7Z` | 7z 可执行文件路径 |
+| `DSH_REMOTE_B2_AUTH` | 仅测试用：覆盖 B2 授权地址 |
+
+## HTTP 路由
+
+| 路由 | 说明 |
+| --- | --- |
+| `GET /api/dsh-remote/` | 配对设置页（自包含 HTML） |
+| `GET /api/dsh-remote/state` | 配置（密钥打码）+ 运行时状态 |
+| `POST /api/dsh-remote/config` | 保存 5 项，桥立即重载 |
+| `POST /api/dsh-remote/test` | 真跑一遍 7z 往返 |
+| `POST /api/dsh-remote/unbind` | 清空该通道在桶里的对象 |
+
+## 手机端可用的 RPC
+
+`app/hello` `app/ping` `app/threads` `app/thread` `app/send` `app/cancel`
+`app/pending` `app/answer` `app/newthread` `app/raw`，
+其余方法名原样转发给中继。
+
+## 许可
+
+MIT

@@ -1,0 +1,28 @@
+# 工具链（自行下载，不进仓库：约 100MB 二进制）
+_toolchain/
+
+# 构建与测试产物
+out/
+android/build/
+tools/out/
+*.apk
+*.keystore
+
+# 测试日志（每次跑都会重写，且含本机路径/主机名）
+*.log
+
+# 凭据：永远只存在 $DSH_HOME/dsh-remote/config.json，绝不入库
+config.json
+b2-credentials.json
+*.state
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+node_modules/
+
+# WorkBuddy 会话/记忆（本机状态，不是项目内容）
+.workbuddy/

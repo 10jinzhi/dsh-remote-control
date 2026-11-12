@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  这个 APK 只有一个 Activity（WebView）和一个前台服务（链路宿主）。
+  没有 ContentProvider、没有广播接收器、没有第三方 SDK —— 权限也只申请
+  真正需要的这几条。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dshremote.app"
+    android:versionCode="1"
+    android:versionName="1.0.0">
+
+    <!--
+      minSdk 26：自适应图标（mipmap-anydpi-v26）没有位图兜底，26 以下会没有图标；
+      26 起也省掉了若干权限/通知渠道的兼容分支。targetSdk 34 跟随 2024 的要求。
+    -->
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+
+    <!-- 只与 Backblaze B2 通信（HTTPS） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- 链路宿主是前台服务：切到后台/息屏也要继续轮询邮箱 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name="dshremote.ui.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="dshremote.ui.LinkService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+    </application>
+
+</manifest>

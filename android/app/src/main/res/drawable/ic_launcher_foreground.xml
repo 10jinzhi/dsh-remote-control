@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用图标：两条反向箭头 —— 「上行下行、双向同步」。
+  只用矢量（没有 PNG），因为本工程是手工 aapt2 构建，不想引入位图资产。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 上箭头：→ -->
+    <path
+        android:pathData="M32,45 L64,45"
+        android:strokeColor="#4EA1FF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M57,37 L66,45 L57,53"
+        android:fillColor="#00000000"
+        android:strokeColor="#4EA1FF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 下箭头：← -->
+    <path
+        android:pathData="M76,63 L44,63"
+        android:strokeColor="#3DDC97"
+        android:strokeWidth="7"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M51,55 L42,63 L51,71"
+        android:fillColor="#00000000"
+        android:strokeColor="#3DDC97"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

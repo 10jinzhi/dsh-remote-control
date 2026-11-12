@@ -1,0 +1,40 @@
+{
+  "name": "dsh-remote-desktop",
+  "version": "1.0.52-remote.1",
+  "description": "DSH 远程控制（电脑端）：手机 App 经私有云桶里加密的数据包访问本机 DSH 会话 —— 无需配对码、无需隧道、不经第三方服务端。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "dshapp-plugin",
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "remote",
+    "backblaze-b2",
+    "7z"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {}
+}
