@@ -231,8 +231,8 @@ async function main() {
 		const { B2Client } = await import('../packages/dsh-remote-desktop/lib/mail7z/b2.js');
 		const cfg = loadConfig();
 		const client = new B2Client(cfg, () => {});
-		await client.put(`${cfg.channel.root}/in/0000000000001.7z`, Buffer.from('junk'));
-		await client.put(`${cfg.channel.root}/out/0000000000001.7z`, Buffer.from('junk'));
+		await client.put(`${cfg.channel.root}/from-phone/0000000000001.7z`, Buffer.from('junk'));
+		await client.put(`${cfg.channel.root}/from-desktop/0000000000001.7z`, Buffer.from('junk'));
 
 		const body = asJson(await http('POST', '/unbind'));
 		assert.equal(body.ok, true, body.message);

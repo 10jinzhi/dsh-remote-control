@@ -32,8 +32,15 @@ export const STATE_DIR = join(dshHome(), 'dsh-remote');
 export const CONFIG_PATH = join(STATE_DIR, 'config.json');
 export const STATE_PATH = join(STATE_DIR, 'state.json');
 
-/** 邮箱根目录前缀。改动它等于让两端一起换地址（版本升级时用）。 */
-const ROOT = 'dsh-remote/v1';
+/**
+ * 邮箱根目录前缀。改动它等于让两端一起换地址（版本升级时用）。
+ *
+ * v2 起队列目录改成 `from-phone/` `from-desktop/`：早期用 `in/` `out/`，
+ * 那对词是站电脑视角取的（in = 进电脑），手机端读同一份代码得反过来理解，
+ * 而且 `in` `out` 太通用，人翻桶看不出方向。升版本号而不是原地改名，
+ * 是为了让旧结构彻底不被新代码扫到 —— 这版还没对外使用，干净切换比兼容划算。
+ */
+const ROOT = 'dsh-remote/v2';
 
 /** 云端文件名只允许这几类字符，其余一律换成 `_`（B2 对象名不能随便来）。 */
 export function sanitizeName(value) {
@@ -132,7 +139,7 @@ export function saveConfig(partial) {
  * ## 为什么还要 password
  *
  * 通道 ID 只解决「往哪儿写」，**不提供机密性**：桶里的对象名是明文，
- * 拿到 bucket 读权限的人（或者误配了公开桶）能看到一堆 `in/xxx.7z`。
+ * 拿到 bucket 读权限的人（或者误配了公开桶）能看到一堆 `from-phone/xxx.7z`。
  * 内容安全完全靠 7z 的 AES-256（密码不参与派生，故意不参与：
  * 密码填错时应该报「解不开」，而不是悄悄换到另一条空通道上去）。
  *

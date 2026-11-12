@@ -14,9 +14,9 @@
 ```
 手机 APK                                        你的电脑
 ────────────────                                ─────────────────────
-in/<13位序号>.7z  ──┐
-                    ├─► Backblaze B2 私有桶 ─► 桥（本插件）
-out/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
+from-phone/<13位序号>.7z    ──┐
+                             ├─► Backblaze B2 私有桶 ─► 桥（本插件）
+from-desktop/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
                                                 ▼
                                      127.0.0.1:17890 中继
                                                 │
@@ -89,7 +89,7 @@ adb install -r out/dsh-remote-1.0.0.apk
 | --- | --- | --- |
 | 公网通路 | 对象存储邮箱（B2） | 不需要公网 IP、不需要开端口、不需要买 VPS；桶本身就是「公网可达但只有你能读写」的中转站 |
 | 加密 | 每次都是标准 7z（AES-256 + LZMA） | 用现成格式而不是自研协议：`7z t` 能验证、任何机器上都能人工取回、两端各自实现也能靠工具互验 |
-| 队列 | `in/` 与 `out/` 两条，各一个生产者 | 序号单调递增 ⇒ 不需要分布式锁、不需要 CAS、不需要冲突处理 |
+| 队列 | `from-phone/` 与 `from-desktop/` 两条，各一个生产者 | 目录名由生产者命名，不靠视角区分方向；序号单调递增 ⇒ 不需要分布式锁、不需要 CAS、不需要冲突处理 |
 | 事件渲染 | 放在电脑端 | APK 里没有 DSH 知识：升级 DSH 不用重装 APK，手机也不算事件 |
 | 密码 | 不参与通道派生 | 密码填错时你应该看到「7z 解不开」，而不是悄悄换到另一条空通道上 |
 | 多台电脑 | 手机端存档案，所有键加前缀（`p.<id>.`） | 配置和**游标**一起隔离，不可能出现「配置切了、游标没切」导致漏消息 |
@@ -112,7 +112,7 @@ packages/dsh-remote-desktop/          电脑端插件（零第三方依赖）
   lib/mail7z/mailbox.js                双队列邮箱协议
   lib/mail7z/render.js                 DSH 事件 → 手机气泡
   lib/mail7z/api.js                    手机能调的 app/* 薄 API
-  lib/mail7z/bridge.js                 桥：in/ → 中继 → out/
+  lib/mail7z/bridge.js                 桥：from-phone/ → 中继 → from-desktop/
   lib/mail7z/settings.js               设置页（独立 HTML）+ 测试/清空接口
 
 android/app/src/main/java/dshremote/     手机端核心（**不碰任何 Android API**）

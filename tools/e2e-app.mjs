@@ -353,8 +353,8 @@ async function main() {
 		});
 
 		await check('桶里的对象是标准 7z（魔数 + 能解开）', async () => {
-			const outs = captured.filter((c) => c.key.startsWith(box.outPrefix()));
-			assert.ok(outs.length > 0, '桥一个 out/ 对象都没写');
+			const outs = captured.filter((c) => c.key.startsWith(box.prefix('desktop')));
+			assert.ok(outs.length > 0, '桥一个 from-desktop/ 对象都没写');
 			const { key, bytes } = outs[0];
 			assert.equal(bytes.subarray(0, 6).toString('hex'), '377abcaf271c', '不是 7z 容器');
 			const payload = await unpackJson(bytes, loaded.password);
@@ -365,7 +365,7 @@ async function main() {
 		});
 
 		await check('用错密码解同一个对象会失败（加密确实生效）', async () => {
-			const first = captured.find((c) => c.key.startsWith(box.outPrefix()));
+			const first = captured.find((c) => c.key.startsWith(box.prefix('desktop')));
 			assert.ok(first !== undefined, '没有可检验的对象');
 			await assert.rejects(() => unpackJson(first.bytes, 'definitely-wrong'), /密码不对/);
 		});
@@ -375,18 +375,18 @@ async function main() {
 			const root = `${loaded.channel.root}/`;
 			const stray = captured.filter((c) => !c.key.startsWith(root));
 			assert.equal(stray.length, 0, `串出去了：${stray.slice(0, 3).map((c) => c.key).join(', ')}`);
-			const queues = [...new Set(captured.map((c) => (c.key.includes('/out/') ? 'out' : c.key.includes('/in/') ? 'in' : '?')))];
+			const queues = [...new Set(captured.map((c) => (c.key.includes('/from-desktop/') ? 'desktop' : c.key.includes('/from-phone/') ? 'phone' : '?')))];
 			return `${captured.length} 次上传 / 队列 ${queues.join(',')}`;
 		});
 
-		await check('电脑端把 in/ 队列全部消费掉了（不留未处理帧）', async () => {
+		await check('电脑端把 from-phone/ 队列全部消费掉了（不留未处理帧）', async () => {
 			if (stub === null) return `已处理 ${bridge.stats.inFrames} 帧（真桶不查残留）`;
 			// 手机刚退出，桥可能还在半路上；给它一个收敛窗口再断言
 			const deadline = Date.now() + 8_000;
-			let left = stub.names().filter((n) => n.includes('/in/'));
+			let left = stub.names().filter((n) => n.includes('/from-phone/'));
 			while (left.length > 0 && Date.now() < deadline) {
 				await new Promise((r) => setTimeout(r, 300));
-				left = stub.names().filter((n) => n.includes('/in/'));
+				left = stub.names().filter((n) => n.includes('/from-phone/'));
 			}
 			assert.equal(left.length, 0, `还剩 ${left.length} 个未处理：${left.slice(0, 3).join(', ')}`);
 			return `已处理 ${bridge.stats.inFrames} 帧`;

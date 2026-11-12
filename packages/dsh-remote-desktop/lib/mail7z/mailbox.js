@@ -2,17 +2,31 @@
  * 邮箱协议 —— 两端之间唯一的数据面。
  *
  * ```
- *   手机(APK)                                   电脑(DSH 插件)
- *   ─────────                                   ─────────────
- *   put  in/0000000000123.7z   ───────────►     pull in/  （解 7z → 处理 → 删对象）
- *   pull out/0000000000456.7z  ◄───────────     put  out/ （请求应答 / 事件批次 / 心跳）
+ *   手机(APK)                                         电脑(DSH 插件)
+ *   ─────────                                         ─────────────
+ *   put  from-phone/0000000000123.7z    ───────────►  pull from-phone/（解 7z → 处理 → 删对象）
+ *   pull from-desktop/0000000000456.7z  ◄───────────  put  from-desktop/（应答 / 事件批次 / 心跳）
  * ```
+ *
+ * 完整对象名（以电脑端为例，B2 是扁平存储，斜杠只是名字的一部分）：
+ *
+ * ```
+ *   dsh-remote/v2/<云端文件名>/ch/<12位通道哈希>/from-phone/0001794483231981.7z
+ *   └── 软件隔离 ┘└─ 哪台电脑 ─┘└─ 哪条通道 ──┘└ 谁写的 ┘└──── 顺序 ────┘
+ * ```
+ *
+ * ## 为什么目录名要写「谁写的」
+ *
+ * 早期用的是 `in/` `out/`：站在电脑角度（in = 进电脑）。问题是两端共用这一份
+ * 代码/同一个类，手机端看到同一对词得把语义翻过来，读的人十次有三次搞反；
+ * 而且 `in` `out` 太通用，翻桶时完全看不出是哪个软件、哪个方向。
+ * 换成 `from-phone` / `from-desktop` 后，方向由**生产者**命名，不依赖视角。
  *
  * ## 为什么是两条队列
  *
- * 每一步都只有**一个生产者**：手机只写 `in/`，电脑只写 `out/`。序号由生产者
- * 本地单调递增，消费者按名字升序拉取 —— 于是不需要分布式锁、不需要 CAS、
- * 不需要版本号冲突处理，B2 那个「最后写入者胜」的对象存储就够了。
+ * 每一步都只有**一个生产者**：手机只写 `from-phone/`，电脑只写 `from-desktop/`。
+ * 序号由生产者本地单调递增，消费者按名字升序拉取 —— 于是不需要分布式锁、
+ * 不需要 CAS、不需要版本号冲突处理，B2 那个「最后写入者胜」的对象存储就够了。
  *
  * ## 一条对象里装多帧
  *
@@ -22,7 +36,7 @@
  *
  * ## 对象名就是顺序
  *
- * `in/` + 13 位十进制序号 + `.7z`。用 `startFileName` 从游标之后开始列，
+ * `from-phone/` + 13 位十进制序号 + `.7z`。用 `startFileName` 从游标之后开始列，
  * 每次轮询恒定 1 次 Class C 调用（$0.004/万次），不会再随队列长度变贵。
  */
 
@@ -30,6 +44,25 @@
 export const FRAME_VERSION = 1;
 
 const SEQ_WIDTH = 13;
+
+/**
+ * 队列名（= 目录名）。键是代码里用的短标识，值是桶里的真实目录。
+ *
+ * 手机端 `Mailbox.java` 里有一份逐字相同的表 —— 改这里必须同步改那边，
+ * 否则两端各写各的目录，表现为「发出去没回音」。
+ */
+export const QUEUE_DIR = {
+	/** 手机写、电脑读。 */
+	phone: 'from-phone',
+	/** 电脑写、手机读。 */
+	desktop: 'from-desktop',
+};
+
+function queueDir(queue) {
+	const dir = QUEUE_DIR[queue];
+	if (!dir) throw new Error(`未知队列 ${queue}`);
+	return dir;
+}
 
 export function seqName(seq) {
 	return String(Math.floor(seq)).padStart(SEQ_WIDTH, '0');
@@ -63,37 +96,40 @@ export class Mailbox {
 		this.log = logger ?? (() => {});
 	}
 
-	inPrefix() { return `${this.channel.root}/in/`; }
-	outPrefix() { return `${this.channel.root}/out/`; }
-	inKey(seq) { return `${this.inPrefix()}${seqName(seq)}.7z`; }
-	outKey(seq) { return `${this.outPrefix()}${seqName(seq)}.7z`; }
+	/** @param queue - `'phone'` 或 `'desktop'` */
+	prefix(queue) {
+		return `${this.channel.root}/${queueDir(queue)}/`;
+	}
+
+	key(queue, seq) {
+		return `${this.prefix(queue)}${seqName(seq)}.7z`;
+	}
 
 	/**
 	 * 打包 + 上传一批帧。
 	 *
-	 * @param queue - `'in'`（手机写的那条）或 `'out'`（电脑写的那条）。
+	 * @param queue - `'phone'`（手机写的那条）或 `'desktop'`（电脑写的那条）。
 	 *   两端都持有同一个 `Mailbox` 类，靠这个参数决定自己站在哪一侧；
-	 *   早期版本把方向写死成 `out/`，结果手机和电脑抢同一条队列（已修）。
+	 *   早期版本把方向写死成一条队列，结果手机和电脑抢同一条（已修）。
 	 * @param seq - 生产者的序号（单调递增）。
 	 * @param frames - 帧数组。
 	 */
 	async putFrames(queue, seq, frames) {
-		if (queue !== 'in' && queue !== 'out') throw new Error(`未知队列 ${queue}`);
 		const bytes = await this.pack({ v: FRAME_VERSION, frames }, this.password);
-		await this.client.put(queue === 'in' ? this.inKey(seq) : this.outKey(seq), bytes);
+		await this.client.put(this.key(queue, seq), bytes);
 		return seq;
 	}
 
 	/**
 	 * 从一条队列里把游标之后的帧全取出来（含删除）。
 	 *
-	 * @param queue - `'in'` 表示读手机写的那条；`'out'` 表示读电脑写的那条。
+	 * @param queue - `'phone'` 读手机写的；`'desktop'` 读电脑写的。
 	 * @param cursor - 已消费到的序号（0 表示从头）。
 	 * @param max - 一次最多处理几个对象。
 	 * @returns `{ frames, cursor, failed, lastFile }`
 	 */
 	async take(queue, cursor, max = 8) {
-		const prefix = queue === 'in' ? this.inPrefix() : this.outPrefix();
+		const prefix = this.prefix(queue);
 		const start = cursor > 0 ? `${prefix}${seqName(cursor + 1)}` : prefix;
 		const files = await this.client.list(prefix, { startFileName: start, maxFileCount: max });
 		const out = [];

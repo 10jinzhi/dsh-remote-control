@@ -59,7 +59,7 @@ class PhoneSim {
 
 	async send(frames) {
 		this.outSeq += 1;
-		await this.box.putFrames('in', this.outSeq, frames);
+		await this.box.putFrames('phone', this.outSeq, frames);
 	}
 
 	async request(method, params = {}, timeoutMs = 25_000) {
@@ -72,9 +72,9 @@ class PhoneSim {
 		return promise;
 	}
 
-	/** 收一轮 out/ 队列，按帧类型分派。 */
+	/** 收一轮 from-desktop/ 队列，按帧类型分派。 */
 	async pump() {
-		const taken = await this.box.take('out', this.cursor, 10);
+		const taken = await this.box.take('desktop', this.cursor, 10);
 		this.cursor = taken.cursor;
 		for (const frame of taken.frames) {
 			if (frame.kind === 'res') {
@@ -289,7 +289,7 @@ async function main() {
 			// 手工塞一个用别的密码打的包
 			const bad = await packJson({ v: 1, frames: [{ kind: 'req', id: 'x', method: 'app/ping' }] }, 'wrong-password');
 			phone.outSeq += 1;
-			await client.put(box.inKey(phone.outSeq - 1), bad);
+			await client.put(box.key('phone', phone.outSeq - 1), bad);
 			await phone.request('app/ping').then(() => true).catch(() => true);
 			// 再发一条正常请求，必须还能通
 			const pong = await phone.request('app/ping');

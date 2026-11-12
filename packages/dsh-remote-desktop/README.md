@@ -13,17 +13,18 @@ DSH 远程控制（DSH Remote Control）的**电脑端插件**：让手机 App �
 ```
 手机 APK                                   本机 DSH
 ────────                                   ────────
-put  in/<seq>.7z   ──┐
-                     ├── Backblaze B2 私有桶（只有密文）
-pull out/<seq>.7z  ◄─┘
+put  from-phone/<seq>.7z    ──┐
+                              ├── Backblaze B2 私有桶（只有密文）
+pull from-desktop/<seq>.7z  ◄─┘
                                             │  桥（本插件）
                                             ▼
                                 127.0.0.1:17890 中继 → 会话引擎
 ```
 
-- **两条队列**：手机只写 `in/`，电脑只写 `out/`。每侧一个生产者、序号单调递增，
+- **两条队列**：手机只写 `from-phone/`，电脑只写 `from-desktop/`。目录名由生产者命名，
+  谁看都不会把方向搞反。每侧一个生产者、序号单调递增，
   于是不需要锁、不需要 CAS、不需要处理版本冲突。
-- **每次都是 7z**：`in/`、`out/` 里的每个对象都是标准 7z（AES-256 + LZMA），
+- **每次都是 7z**：`from-phone/`、`from-desktop/` 里的每个对象都是标准 7z（AES-256 + LZMA），
   密码两端各存一份、不进桶。
 - **事件在电脑侧渲染**：桥替你订阅中继的 SSE，把事件折成「气泡」再打包发出，
   所以 APK 里没有 DSH 知识 —— 升级 DSH 不用重装 APK。
@@ -37,7 +38,7 @@ pull out/<seq>.7z  ◄─┘
 4. 点 **测试往返** —— 它会真的往桶里写一个加密包、读回来、再删掉；
 5. 在 APK 里填**完全一样**的 5 项。
 
-前 4 项决定通道 ID（`HMAC-SHA256(appKey, "channel-id|dsh-remote/v1|<bucket>|<cloudFile>")`
+前 4 项决定通道 ID（`HMAC-SHA256(appKey, "channel-id|dsh-remote/v2|<bucket>|<cloudFile>")`
 取前 12 位十六进制），密码只用于 7z 加密。两端算出来的通道 ID 相同即连通。
 
 > ⚠️ 不要与 `dsh-jiuling-remote-desktop` 同时启用：两者都要占用本地中继端口

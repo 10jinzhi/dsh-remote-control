@@ -13,10 +13,13 @@ import dshremote.z7.SevenZipWriter;
  * 邮箱协议（手机侧）—— 与电脑端 `lib/mail7z/mailbox.js` 对应。
  *
  * <pre>
- *   手机                                电脑
- *   put  in/&lt;seq&gt;.7z   ─────────►      pull in/
- *   pull out/&lt;seq&gt;.7z  ◄─────────      put  out/
+ *   手机                                         电脑
+ *   put  from-phone/&lt;seq&gt;.7z    ────────►      pull from-phone/
+ *   pull from-desktop/&lt;seq&gt;.7z  ◄────────      put  from-desktop/
  * </pre>
+ *
+ * 目录名由**生产者**命名（谁写的），不靠视角区分：早期用 `in/` `out/` 站的是电脑
+ * 角度，两端共用同一套逻辑时读的人很容易把方向搞反。
  *
  * 每条队列只有一个生产者，序号单调递增，消费者按名字升序拉取 ——
  * 于是不需要分布式锁，也不需要处理「版本冲突」。一条对象里可以装多帧
@@ -26,6 +29,16 @@ public final class Mailbox {
 
     public static final int FRAME_VERSION = 1;
     private static final int SEQ_WIDTH = 13;
+
+    /** 队列名（= 桶里的目录名），与 JS 端 `QUEUE_DIR` 逐字一致。 */
+    public static final String Q_PHONE = "from-phone";
+    public static final String Q_DESKTOP = "from-desktop";
+
+    private static String dir(String queue) {
+        if ("phone".equals(queue)) return Q_PHONE;
+        if ("desktop".equals(queue)) return Q_DESKTOP;
+        throw new IllegalArgumentException("未知队列 " + queue);
+    }
 
     private final B2Client client;
     private final Config.Channel channel;
@@ -39,20 +52,13 @@ public final class Mailbox {
         this.log = log;
     }
 
-    public String inPrefix() {
-        return channel.root + "/in/";
+    /** @param queue - `"phone"` 或 `"desktop"` */
+    public String prefix(String queue) {
+        return channel.root + "/" + dir(queue) + "/";
     }
 
-    public String outPrefix() {
-        return channel.root + "/out/";
-    }
-
-    public String inKey(long seq) {
-        return inPrefix() + pad(seq);
-    }
-
-    public String outKey(long seq) {
-        return outPrefix() + pad(seq);
+    public String key(String queue, long seq) {
+        return prefix(queue) + pad(seq);
     }
 
     private static String pad(long seq) {
@@ -79,7 +85,7 @@ public final class Mailbox {
         payload.put("frames", frames);
         byte[] archive = SevenZipWriter.pack(
                 Json.stringify(payload).getBytes("UTF-8"), "m.json", password.toCharArray());
-        client.put("in".equals(queue) ? inKey(seq) : outKey(seq), archive);
+        client.put(key(queue, seq), archive);
     }
 
     /** 一帧的解包结果。 */
@@ -96,8 +102,7 @@ public final class Mailbox {
      * 但游标照样前移，免得一条坏帧把整条队列堵死。
      */
     public Batch take(String queue, long cursor, int max) throws IOException {
-        boolean in = "in".equals(queue);
-        String prefix = in ? inPrefix() : outPrefix();
+        String prefix = prefix(queue);
         String start = cursor > 0 ? prefix + pad(cursor + 1) : prefix;
         List<Map<String, Object>> files = client.list(prefix, start, max);
         Batch batch = new Batch();

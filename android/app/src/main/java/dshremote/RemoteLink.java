@@ -284,13 +284,13 @@ public final class RemoteLink {
         }
         if (batch != null && !batch.isEmpty()) {
             outSeq += 1;
-            box.putFrames("in", outSeq, batch);
+            box.putFrames("phone", outSeq, batch);
             store.put("outSeq", Long.toString(outSeq));
             didWork = true;
         }
 
         // ② 收
-        Mailbox.Batch taken = box.take("out", cursor, MAX_PER_TICK);
+        Mailbox.Batch taken = box.take("desktop", cursor, MAX_PER_TICK);
         if (taken.cursor != cursor) {
             cursor = taken.cursor;
             store.put("cursor", Long.toString(cursor));

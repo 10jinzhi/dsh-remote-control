@@ -237,7 +237,7 @@ export class MailBridge {
 
 	// ------------------------------------------------------------ 出站
 
-	/** 往 out/ 塞一帧（不立刻上传，等 tick 末尾合并上传）。 */
+	/** 往 from-desktop/ 塞一帧（不立刻上传，等 tick 末尾合并上传）。 */
 	push(frame) {
 		this.outbox.push(frame);
 	}
@@ -249,7 +249,7 @@ export class MailBridge {
 		this.outbox = [];
 		const seq = this.state.outSeq + 1;
 		try {
-			await this.box.putFrames('out', seq, frames);
+			await this.box.putFrames('desktop', seq, frames);
 			this.state.outSeq = seq;
 			saveState({ ...this.state, lastAppSeenAt: this.lastAppSeenAt });
 			this.stats.outObjects += 1;
@@ -268,7 +268,7 @@ export class MailBridge {
 		if (this.box === null) return;
 
 		// ① 收手机写来的帧
-		const taken = await this.box.take('in', this.state.inCursor, MAX_PER_TICK);
+		const taken = await this.box.take('phone', this.state.inCursor, MAX_PER_TICK);
 		if (taken.failed > 0) {
 			this.warn(`${taken.failed} 个对象解不开（密码不一致？），已跳过但**未删除**，可在桶里人工取回`);
 		}
