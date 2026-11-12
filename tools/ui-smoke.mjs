@@ -196,6 +196,7 @@ check('状态推送能填好表单与状态栏', () => {
 	}));
 	assert(elements.get('v-channel').textContent === 'abc123def456', '通道没填上');
 	assert(elements.get('f-keyid').value === '005f-test', '表单没填上');
+	assert(elements.get('f-cloud').value === 'dsh-remote', '云端文件名没填上');
 	assert(elements.get('v-link').textContent.includes('已连接'), '状态文案不对');
 	assert(elements.get('logs').textContent.includes('B2 授权成功'), '日志没渲染');
 	assert(elements.get('titleText').textContent.includes('已连接'), '标题没更新');
@@ -342,6 +343,29 @@ check('新增电脑：弹命名层，确定后调 profileNew', () => {
 	assert(created.args.name === '客厅小主机', `名字是「${created.args.name}」`);
 	assert(elements.get('nameModal').hidden === true, '命名层没关掉');
 	return created.args.name;
+});
+
+check('新增电脑后，云端文件名已经预填好（就是那台机器的身份）', () => {
+	sandbox.__nativeResult('', JSON.stringify({
+		config: {
+			appKeyId: '', bucket: '', cloudFile: 'desk-3f9a2c', hasAppKey: false, hasPassword: false,
+			channel: '', fingerprint: '', missing: ['Application Key', 'Bucket 名称', '加密密码（7z）'],
+		},
+		profiles: {
+			active: 'p3',
+			list: [
+				{ id: 'p1', name: '书房台式机', cloudFile: 'desk-win', channel: 'aaa111', complete: true, missing: [] },
+				{ id: 'p2', name: '笔记本', cloudFile: 'laptop', channel: '', complete: false, missing: ['Application Key'] },
+				{ id: 'p3', name: '客厅小主机', cloudFile: 'desk-3f9a2c', channel: '', complete: false, missing: ['Application Key'] },
+			],
+		},
+		link: { connected: false, message: '未配置', lastDeskSeenAt: 0, lastError: '' },
+		running: false,
+		logs: [],
+	}));
+	assert(elements.get('f-cloud').value === 'desk-3f9a2c', `预填的是「${elements.get('f-cloud').value}」`);
+	assert(elements.get('f-computer').children.length === 3, '下拉没跟着多一项');
+	return '预填 desk-3f9a2c';
 });
 
 check('删除电脑要连点两次（不会误删）', () => {

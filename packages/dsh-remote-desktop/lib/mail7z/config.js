@@ -42,6 +42,28 @@ export function sanitizeName(value) {
 	return raw.replace(/[^\w.\-]+/g, '_').slice(0, 120);
 }
 
+/**
+ * 把「机器名」转成可以直接当云端文件名用的短名（与手机端 `Config.defaultCloudFile` 逐字一致）。
+ *
+ * 通道 ID 由 `appKey + bucket + cloudFile` 派生成，所以这一项就是「哪台电脑」：
+ * 它不同 ⇒ 通道不同 ⇒ 另一台机器的独立邮箱。
+ *
+ * 规则：
+ *   · 转小写、非 `[a-z0-9]` 一律折成 `-`、去掉首尾与重复的 `-`、最长 40；
+ *   · 全部被折光时（中文机器名）退化成 `desk-<sha256 前 6 位>`。
+ *
+ * 中文名不直接保留：两端清洗分别跑在 Java 与 JS 上，Unicode 归一化 / 大小写
+ * 折叠的任何一点差异都会让同一台机器算出两条通道，而这种错几乎无法从现象上
+ * 归因。宁可退化成一个明显的自动生成名，让用户自己改成好记的短名。
+ */
+export function defaultCloudFile(name) {
+	const raw = String(name ?? '').trim().toLowerCase();
+	let slug = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
+	if (slug.length > 40) slug = slug.slice(0, 40).replace(/-+$/, '');
+	if (slug === '') slug = `desk-${createHash('sha256').update(raw).digest('hex').slice(0, 6)}`;
+	return slug;
+}
+
 /** 5 项配置是否齐全。返回缺失的字段名数组，空数组表示齐全。 */
 export function missingFields(cfg) {
 	const out = [];

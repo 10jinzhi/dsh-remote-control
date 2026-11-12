@@ -16,7 +16,7 @@
  * 运行：node tools/settings-smoke.mjs [--real]
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir, homedir, hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
 import { startLocalB2 } from './local-b2.mjs';
@@ -117,7 +117,7 @@ async function main() {
 	}
 
 	const { createSettingsHandler } = await import('../packages/dsh-remote-desktop/lib/mail7z/settings.js');
-	const { loadConfig } = await import('../packages/dsh-remote-desktop/lib/mail7z/config.js');
+	const { loadConfig, defaultCloudFile } = await import('../packages/dsh-remote-desktop/lib/mail7z/config.js');
 
 	let reloads = 0;
 	const bridge = {
@@ -145,6 +145,21 @@ async function main() {
 	console.log('');
 
 	console.log('== 断言 ==');
+	/*
+	 * 云端文件名的默认值：电脑端（JS）与手机端（Java）必须生成完全相同的字符串。
+	 * 下面这几个期望值与 tools/jvm/dshremote/ProfilesTest.java 里写的是同一组 ——
+	 * 两边任何一个改了规则，就会有一边红。漂移的后果是同一台机器算出两条通道，
+	 * 现象上只是「消息一直不来」，最难归因。
+	 */
+	await check('云端文件名默认值两端同一套规则（机器名 → 短名）', async () => {
+		assert.equal(defaultCloudFile('DESKTOP-8K3F2L'), 'desktop-8k3f2l');
+		assert.equal(defaultCloudFile('书房台式机'), 'desk-ec4d11');
+		assert.equal(defaultCloudFile('  Mac mini (客厅)  '), 'mac-mini');
+		assert.equal(defaultCloudFile(''), 'desk-e3b0c4');
+		assert.equal(defaultCloudFile('a'.repeat(80)).length, 40, '没截到 40 字符');
+		return '4 个样例与 Java 逐字一致';
+	});
+
 	await check('GET / 返回设置页 HTML', async () => {
 		const res = await http('GET', '');
 		assert.equal(res.statusCode, 200);
@@ -160,7 +175,10 @@ async function main() {
 		assert.equal(body.missing.length, 5, `缺项数 ${body.missing.length}`);
 		assert.equal(body.config.appKey, '', '还没填就有值？');
 		assert.equal(body.config.passwordSet, false);
-		return `缺 ${body.missing.length} 项`;
+		// 没填云端文件名时要把「本机机器名派生出来的短名」给前端预填
+		assert.equal(body.suggestedCloudFile, defaultCloudFile(hostname()));
+		assert.ok(body.suggestedCloudFile.length > 0, '预填值是空的');
+		return `缺 ${body.missing.length} 项，预填 ${body.suggestedCloudFile}`;
 	});
 
 	await check('POST /config 保存五项并触发一次桥重载', async () => {

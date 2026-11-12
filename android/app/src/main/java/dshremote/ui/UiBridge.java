@@ -220,7 +220,9 @@ public final class UiBridge implements LinkService.Listener {
         switch (method) {
             case "profileNew": {
                 String created = profiles.create(name);
-                onLog("新增电脑「" + profiles.nameOf(created) + "」，填好 5 项就是一条独立通道");
+                Config fresh = Config.load(profiles.storeFor(created));
+                onLog("新增电脑「" + profiles.nameOf(created) + "」，云端文件名默认 " + fresh.cloudFile
+                        + "（这一项决定通道，照抄到那台电脑就是新机器）");
                 break;
             }
             case "profileSelect":

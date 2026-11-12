@@ -407,7 +407,7 @@
 			</div>
 			<p class="hint">
 				一台手机可以连多台电脑。每台有自己的一组 5 项、自己的收发游标，
-				互不影响 —— 切过去就是另一台机器的会话。
+				互不影响 —— 新机器只要「云端文件名」和别的那台不同就够了。
 			</p>
 		</div>
 
@@ -423,8 +423,13 @@
 			<label for="f-bucket">Bucket 名称</label>
 			<input id="f-bucket" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="my-dsh-bucket">
 
-			<label for="f-cloud">云端文件名</label>
-			<input id="f-cloud" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="dsh-remote">
+			<label for="f-cloud">云端文件名（= 哪台电脑）</label>
+			<input id="f-cloud" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="默认用电脑名，例如 desk-win">
+			<p class="hint">
+				这一项决定通道：只要它不同，就是一台新机器（通道 ID 与桶内前缀都不同），
+				其余四项可以和别的电脑一样。新增电脑时会按名字自动填一个，可改成更好记的短名 ——
+				改完两边必须一致。
+			</p>
 
 			<label for="f-pwd">加密密码（7z）</label>
 			<input id="f-pwd" type="password" autocomplete="off" spellcheck="false" placeholder="与电脑端填同一个密码">
@@ -447,7 +452,7 @@
 				<dt>电脑</dt><dd id="v-computer">—</dd>
 				<dt>通道</dt><dd id="v-channel">—</dd>
 				<dt>指纹</dt><dd id="v-fingerprint">—</dd>
-				<dt>电脑</dt><dd id="v-link">—</dd>
+				<dt>链路</dt><dd id="v-link">—</dd>
 				<dt>最近回应</dt><dd id="v-seen">—</dd>
 				<dt>收发</dt><dd id="v-stats">—</dd>
 			</dl>

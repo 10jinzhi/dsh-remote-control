@@ -87,6 +87,30 @@ public final class Config {
         return new Channel(channelId, root, fingerprint);
     }
 
+    /**
+     * 把「机器名」转成可以直接当云端文件名用的短名。
+     *
+     * 通道 ID 由 `appKey + bucket + cloudFile` 派生成，所以**这一项就是「哪台电脑」**：
+     * 只要它不同，就是一条全新的通道（通道 ID 和桶内前缀都不同）。
+     * 用户不想为每台机器现想一个英文名，于是默认拿机器名来生成。
+     *
+     * 规则（电脑端 `defaultCloudFile()` 必须与这里逐字一致，否则两端算不出同一条通道）：
+     *   · 转小写、非 `[a-z0-9]` 一律折成 `-`、去掉首尾与重复的 `-`、最长 40；
+     *   · 全部被折光时（比如中文名字）退化成 `desk-<sha256 前 6 位>`。
+     *
+     * 为什么中文名不直接保留：对象名进 URL / 列举请求时要走 UTF-8，而两端
+     * 的清洗函数分别跑在 Java 与 JS 上，Unicode 归一化与大小写折叠的边角
+     * 不一致就会让同一台机器算出两条通道 —— 这种错极难查。宁可退化成一个
+     * ASCII 短名，让人一眼看出「这是自动生成的」，再自己改。
+     */
+    public static String defaultCloudFile(String name) {
+        String raw = name == null ? "" : name.trim().toLowerCase(java.util.Locale.ROOT);
+        String slug = raw.replaceAll("[^a-z0-9]+", "-").replaceAll("^-+", "").replaceAll("-+$", "");
+        if (slug.length() > 40) slug = slug.substring(0, 40).replaceAll("-+$", "");
+        if (slug.isEmpty()) slug = "desk-" + sha256Hex(raw).substring(0, 6);
+        return slug;
+    }
+
     /** B2 对象名不允许随便来：与电脑端同一套清洗规则。 */
     public static String sanitize(String value) {
         if (value == null) return "";

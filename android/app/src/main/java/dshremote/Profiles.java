@@ -134,7 +134,30 @@ public final class Profiles {
         return item == null ? "" : item.name;
     }
 
+    /**
+     * 新增一台电脑。
+     *
+     * 「云端文件名」默认就用机器名派生（{@link Config#defaultCloudFile}）—— 它决定通道，
+     * 所以这一项不同就是另一台机器。预填只是个起点：用户想改成 `desk-win` 之类
+     * 更短的短名随时可以，改完再照抄到电脑端即可。
+     *
+     * 重名要躲开：连着点两次「新增」都用默认名时，两条档案会算出**同一个**通道，
+     * 各自维护自己的游标 —— 切过去就会看到「消息凭空少了一半」这种最难查的现象。
+     */
     public synchronized String create(String name) {
+        List<Item> all = read();
+        String id = newId();
+        while (find(all, id) != null) id = newId();
+        Item item = new Item(id, cleanName(name));
+        all.add(item);
+        write(all);
+        base.put(KEY_ACTIVE, id);
+        storeFor(id).put("cloudFile", unusedCloudFile(Config.defaultCloudFile(item.name), id));
+        return id;
+    }
+
+    /** 占位档案（删光所有电脑后补的那条）：不预填云端文件名，它只是给界面一个落点。 */
+    private synchronized String createPlaceholder(String name) {
         List<Item> all = read();
         String id = newId();
         while (find(all, id) != null) id = newId();
@@ -142,6 +165,27 @@ public final class Profiles {
         write(all);
         base.put(KEY_ACTIVE, id);
         return id;
+    }
+
+    /**
+     * 挑一个还没有被任何档案占用的云端文件名。
+     *
+     * 撞了就追加 `-2`、`-3`…，实在不行用 id 尾巴兜底 —— 宁可生成一个丑名字，
+     * 也不能让两条档案指向同一条队列。
+     */
+    private String unusedCloudFile(String base, String selfId) {
+        List<Item> all = read();
+        java.util.Set<String> taken = new java.util.HashSet<>();
+        for (Item item : all) {
+            if (item.id.equals(selfId)) continue;
+            taken.add(Config.load(storeFor(item.id)).cloudFile);
+        }
+        if (!taken.contains(base)) return base;
+        for (int i = 2; i <= 9; i++) {
+            String candidate = base + "-" + i;
+            if (!taken.contains(candidate)) return candidate;
+        }
+        return base + "-" + selfId.substring(Math.max(0, selfId.length() - 4));
     }
 
     public synchronized void rename(String id, String name) {
@@ -164,7 +208,7 @@ public final class Profiles {
         all.remove(item);
         write(all);
         if (all.isEmpty()) {
-            create(DEFAULT_NAME);
+            createPlaceholder(DEFAULT_NAME);
             return;
         }
         if (id.equals(base.get(KEY_ACTIVE))) base.put(KEY_ACTIVE, all.get(0).id);
@@ -221,8 +265,21 @@ public final class Profiles {
         return null;
     }
 
-    private static String newId() {
-        return "p" + System.currentTimeMillis();
+    /**
+     * 生成一个必然增长的 id。
+     *
+     * 原先是裸的 `System.currentTimeMillis()`：连点两次「新增」会拿到同一个
+     * 毫秒，`while (find(all, id) != null) id = newId()` 就变成死循环 ——
+     * 在 UI 线程上就是一次 ANR。这里强制单调递增，撞车只会发生在跨进程，
+     * 而手机上只有一个进程。
+     */
+    private static long lastIdMs = 0;
+
+    private static synchronized String newId() {
+        long now = System.currentTimeMillis();
+        if (now <= lastIdMs) now = lastIdMs + 1;
+        lastIdMs = now;
+        return "p" + now;
     }
 
     private static String cleanName(String name) {

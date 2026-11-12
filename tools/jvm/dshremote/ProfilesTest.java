@@ -94,6 +94,52 @@ public final class ProfilesTest {
         emit("profiles-no-ghost", noGhost,
                 "剩 " + left.size() + " 条，缺 " + survivor.missing().size() + " 项");
 
+        // ---- 6) 「机器名 → 云端文件名」规则：ASCII 名保留可读，中文名退化成短名
+        // 这里的字面量是硬编码的：电脑端 JS 用同一套字面量断言，两端一旦漂移
+        // 就会有一边红 —— 漂移的后果是同一台机器算出两条通道，最难查的一类。
+        String ascii = Config.defaultCloudFile("DESKTOP-8K3F2L");
+        String cjk = Config.defaultCloudFile("书房台式机");
+        String spaced = Config.defaultCloudFile("  Mac mini (客厅)  ");
+        boolean slugOk = "desktop-8k3f2l".equals(ascii)
+                && "desk-ec4d11".equals(cjk)
+                && "mac-mini".equals(spaced)
+                && "desk-e3b0c4".equals(Config.defaultCloudFile(""));
+        emit("cloud-default-slug", slugOk,
+                ascii + " / " + cjk + " / " + spaced);
+
+        // ---- 7) 新增电脑时会预填云端文件名（用户不用自己想英文名）
+        String c1 = profiles.create("书房台式机");
+        String c2 = profiles.create("书房台式机");
+        Config one = Config.load(profiles.storeFor(c1));
+        Config two = Config.load(profiles.storeFor(c2));
+        boolean prefilled = cjk.equals(one.cloudFile)
+                && two.cloudFile.startsWith(cjk)
+                && !one.cloudFile.equals(two.cloudFile);
+        emit("cloud-default-prefill", prefilled,
+                "①" + one.cloudFile + " / ②" + two.cloudFile);
+
+        // ---- 8) 四项完全一样、只有云端文件名不同 ⇒ 就是两台机器（通道必须不同）
+        for (String id : new String[]{c1, c2}) {
+            Config cfg = Config.load(profiles.storeFor(id));
+            cfg.appKeyId = "005f-shared";
+            cfg.appKey = "K005shared";
+            cfg.bucket = "bucket-shared";
+            cfg.password = "pw-shared";
+            cfg.save(profiles.storeFor(id));
+        }
+        Config.Channel n1 = Config.load(profiles.storeFor(c1)).channel();
+        Config.Channel n2 = Config.load(profiles.storeFor(c2)).channel();
+        boolean sameExceptCloud = n1 != null && n2 != null
+                && !n1.channelId.equals(n2.channelId)
+                && !n1.root.equals(n2.root);
+        emit("cloud-only-diff-is-new-machine", sameExceptCloud,
+                (n1 == null ? "①=null" : "①" + n1.channelId) + " / " + (n2 == null ? "②=null" : "②" + n2.channelId));
+
+        // ---- 9) 连续新增不能撞 id（以前同毫秒会死循环 = ANR）
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (int i = 0; i < 20; i++) ids.add(profiles.create("批量 " + i));
+        emit("cloud-id-monotonic", ids.size() == 20, "20 次新增得到 " + ids.size() + " 个 id");
+
         Files.deleteIfExists(state);
         System.exit(0);
     }

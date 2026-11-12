@@ -12,7 +12,8 @@
  *   POST /unbind    → 清空该通道在桶里的所有对象
  */
 import { randomBytes } from 'node:crypto';
-import { loadConfig, missingFields, sanitizeName, saveConfig } from './config.js';
+import { hostname } from 'node:os';
+import { defaultCloudFile, loadConfig, missingFields, sanitizeName, saveConfig } from './config.js';
 import { B2Client } from './b2.js';
 import { Mailbox } from './mailbox.js';
 import { packJson, unpackJson } from './sevenz.js';
@@ -117,6 +118,7 @@ export function createSettingsHandler({ bridge, logger }) {
 
 			if (req.method === 'GET' && action === '/state') {
 				const cfg = loadConfig();
+				const machine = hostname();
 				json(res, 200, {
 					config: {
 						appKeyId: cfg.appKeyId,
@@ -127,6 +129,10 @@ export function createSettingsHandler({ bridge, logger }) {
 						passwordSet: cfg.password !== '',
 						passwordMask: mask(cfg.password),
 					},
+					// 还没填云端文件名时，把「本机机器名派生出来的短名」交给前端预填：
+					// 每台电脑默认为自己一个名字，就不会两台机器撞进同一条队列。
+					suggestedCloudFile: cfg.cloudFile === '' ? defaultCloudFile(machine) : '',
+					hostname: machine,
 					status: bridge?.status?.() ?? {},
 					missing: missingFields(cfg),
 				});
@@ -238,9 +244,13 @@ const PAGE = `<!doctype html>
     <label>Bucket 名称</label>
     <input id="bucket" placeholder="my-dsh-bucket" autocomplete="off" spellcheck="false">
 
-    <label>云端文件名</label>
-    <input id="cloudFile" placeholder="dsh-remote" autocomplete="off" spellcheck="false">
-    <div class="hint">桶内用它做目录前缀（dsh-remote/v1/&lt;云端文件名&gt;/…），换一个名字即换一条通道。</div>
+    <label>云端文件名（= 哪台电脑）</label>
+    <input id="cloudFile" placeholder="默认用本机电脑名" autocomplete="off" spellcheck="false">
+    <div class="hint">
+      这一项决定通道：<b>两台电脑只要这一项不同，就是两条互不干扰的通道</b>，其余四项可以完全一样。
+      留空时默认用本机电脑名派生（例如 <code>desk-win</code>）；中文机器名会退化成 <code>desk-3f9a2c</code> 这种短名，建议自己改成好记的。
+      手机端填同一串即可。
+    </div>
 
     <label>加密密码（7z）</label>
     <input id="password" type="password" placeholder="留空表示不修改" autocomplete="new-password">
@@ -265,8 +275,10 @@ const PAGE = `<!doctype html>
     <h2>怎么连手机</h2>
     <div class="hint">
       1. 去 Backblaze 建一把限定本桶的 Application Key（Read and Write）。<br>
-      2. 上面五项与本页面显示的<b>通道指纹</b>抄到手机 APK 的「设置」里，五项必须逐字一致。<br>
-      3. 手机点「连接」，本页「手机最后在线」开始跳动即配对成功 —— 没有配对码、没有二维码。
+      2. 上面五项抄到手机 App 的「配对信息」里，五项必须逐字一致。<br>
+      3. 再加一台电脑时：<b>只把「云端文件名」换成那台机器自己的</b>，其余四项照旧，
+         两边各自独立、互不抢消息。<br>
+      4. 手机点「连接」，本页「手机最后在线」开始跳动即配对成功 —— 没有配对码、没有二维码。
     </div>
   </div>
 </div>
@@ -274,12 +286,30 @@ const PAGE = `<!doctype html>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+/*
+ * 轮询每 5 秒会把 /state 回填到输入框 —— 用户正在输入时不能动，否则
+ * 一长串 Key ID 打到一半就被“还原”了（以前真会这样）。所以记住哪些框
+ * 已经被改过，改过的就不再回填，直到保存成功。
+ */
+const dirty = new Set();
+for (const id of ['appKeyId', 'bucket', 'cloudFile']) {
+  $(id).addEventListener('input', () => dirty.add(id));
+}
+function restore(id, value) {
+  if (dirty.has(id)) return;
+  const el = $(id);
+  if (document.activeElement === el) return;
+  el.value = value;
+}
+
 async function load() {
   const r = await fetch('${ROUTE}/state').then((x) => x.json());
   const c = r.config ?? {};
-  $('appKeyId').value = c.appKeyId ?? '';
-  $('bucket').value = c.bucket ?? '';
-  $('cloudFile').value = c.cloudFile ?? '';
+  restore('appKeyId', c.appKeyId ?? '');
+  restore('bucket', c.bucket ?? '');
+  // 没填过就预填「本机机器名派生出来的短名」：每台电脑默认自己一个名字，
+  // 不会两台机器撞进同一条队列；用户想改随时改。
+  restore('cloudFile', c.cloudFile || r.suggestedCloudFile || '');
   $('appKey').placeholder = c.appKeySet ? ('已保存 ' + c.appKey + '（留空不改）') : '输入 Application Key';
   $('password').placeholder = c.passwordSet ? ('已保存 ' + c.passwordMask + '（留空不改）') : '输入 7z 加密密码';
   const s = r.status ?? {};
@@ -318,6 +348,7 @@ $('save').onclick = async () => {
     });
     say(r.message ?? '已保存', r.ok ? 'ok' : 'warn');
     $('appKey').value = ''; $('password').value = '';
+    dirty.clear();
     await load();
   } finally { $('save').disabled = false; }
 };
