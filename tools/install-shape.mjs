@@ -7,6 +7,12 @@
  * 任何一条不满足，用户那边的症状都是「粘贴链接 → 装完报 not-bundle → 回滚」，
  * 而且报错不告诉你是哪一个文件没带。
  *
+ * 「装得上」之后还得「启得动」：web-boot 会把 `exports['./client']` 当普通 script
+ * 注入，再实例化它注册的 factory。手写的客户端脚本一旦引用了未声明的 CJS
+ * 全局（最典型是漏写 `var exports = module.exports`），语法检查全过、安装也成功，
+ * 但启动直接 `exports is not defined` ⇒ 整个 entry 判为 did not activate。
+ * 所以末尾几项会**真的执行一遍 factory**，而不是只看文件在不在。
+ *
  * 这条检查放在全量回归最前面：结构被改坏的代价，比任何协议 bug 都大。
  *
  * 运行：node tools/install-shape.mjs
@@ -14,6 +20,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 const ROOT = resolve(import.meta.dirname, '..');
 let passed = 0;
@@ -106,9 +113,96 @@ check('GitHub 仓库链接能被安装器判成 git spec', () => {
 	// owner/repo 之后只允许 .git 与 #fragment，不允许 /tree/main/子目录。
 	const hosted = /^https?:\/\/[^/]+\/[^/]+\/[^/#]+(?:\.git)?(?:#.*)?$/i;
 	assert(hosted.test('https://github.com/10jinzhi/dsh-remote-control'), '普通仓库链接不匹配');
-	assert(hosted.test('https://github.com/10jinzhi/dsh-remote-control#v1.0.0'), '钉版本链接不匹配');
+	assert(hosted.test('https://github.com/10jinzhi/dsh-remote-control#v1.0.1'), '钉版本链接不匹配');
 	assert(!hosted.test('https://github.com/10jinzhi/dsh-remote-control/tree/main/lib'),
 		'子目录链接本应被拒（所以仓库根必须就是包）');
+});
+
+// ---------------------------------------------------------------- 客户端半边
+//
+// host 侧（client-modules/src/index.ts）按 `dsh.client.platform === 'web'` 收集
+// 客户端入口，路径取 `exports['./client']`，作为 script 注入 web 页面。
+// 这一段模拟的正是这个加载过程。
+
+let clientRegistration = null;
+
+check('dsh.client 声明与 exports["./client"] 能被 host 侧解析', () => {
+	const decl = pkg.dsh?.client;
+	assert(decl && typeof decl === 'object', '缺 dsh.client 声明');
+	assert(decl.platform === 'web', `platform 是 ${decl.platform}，host 侧只收 web`);
+	assert(decl.inject === undefined || Array.isArray(decl.inject), 'dsh.client.inject 不是数组');
+	const client = pkg.exports?.['./client'];
+	const rel = typeof client === 'string' ? client : client?.default;
+	assert(typeof rel === 'string', 'exports["./client"] 不是字符串或带 default 的对象');
+	assert(existsSync(resolve(ROOT, rel)), `${rel} 不在磁盘上`);
+	assert(packed !== null && packed.includes(rel.replace(/^\.\//, '')),
+		`${rel} 没被打进包，装完 web-boot 会 404`);
+	return rel;
+});
+
+check('客户端脚本能注册 factory，且 factory 实例化不抛异常', () => {
+	const src = readFileSync(join(ROOT, 'lib/client.js'), 'utf8');
+	// 只给 window：不给 require / exports / process。漏写 `var exports = ...`
+	// 时，factory 里的赋值会在这里原样抛出 ReferenceError —— 这正是 web-boot
+	// 报 `import failed: exports is not defined` 的成因。
+	runInNewContext(src, {
+		window: { __ModuleLoader__: { load: (r) => { clientRegistration = r; } } },
+		fetch: () => { throw new Error('顶层不该发请求'); },
+		console,
+	});
+	assert(clientRegistration !== null, '脚本没有调用 window.__ModuleLoader__.load');
+	assert(clientRegistration.id === pkg.name,
+		`注册 id 是 ${clientRegistration.id}，与包名 ${pkg.name} 不一致`);
+	assert(typeof clientRegistration.factory === 'function', '没有 factory');
+
+	const noop = () => ({});
+	const fakeReact = {
+		createElement: noop,
+		useState: () => [null, noop],
+		useCallback: (fn) => fn,
+		useEffect: noop,
+	};
+	const fakePrimitives = { Button: noop, Pill: noop };
+	const requireStub = (id) => {
+		if (id === 'react') return fakeReact;
+		if (id === '@deepseek-ai/dsh-client-ui-primitives') return fakePrimitives;
+		throw new Error(`客户端脚本请求了未声明的外部模块：${id}`);
+	};
+
+	const face = clientRegistration.factory(requireStub);
+	assert(face && typeof face === 'object', 'factory 没有返回模块对象');
+	assert(typeof face.apply === 'function', '缺 apply');
+	assert(Array.isArray(face.inject), 'inject 不是数组');
+	return `注册 ${clientRegistration.id}，导出 ${Object.keys(face).join('/')}`;
+});
+
+check('apply 能注入设置页 slot 并注册面板组件', () => {
+	assert(clientRegistration !== null, '上一步没跑');
+	const face = clientRegistration.factory((id) => {
+		if (id === 'react') return { createElement: () => ({}), useState: () => [null, () => {}],
+			useCallback: (fn) => fn, useEffect: () => {} };
+		if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Button: () => ({}), Pill: () => ({}) };
+		throw new Error(`未声明的外部模块：${id}`);
+	});
+	let slot = null;
+	let cell = null;
+	face.apply({
+		slots: {
+			inject: (name, fn) => { slot = name; fn(); },
+			register: (meta, Component) => { cell = { meta, Component }; return () => {}; },
+		},
+	});
+	assert(slot === 'settings.section', `注入到 ${slot}，不是设置页`);
+	assert(cell && typeof cell.Component === 'function', '没注册面板组件');
+	assert(cell.meta.label === 'DSH 远程控制', `面板标题是 ${cell.meta.label}`);
+	return slot;
+});
+
+check('两个入口都能被各自的运行时解析（ESM 语法检查）', () => {
+	for (const f of ['lib/index.js', 'lib/client.js']) {
+		const r = spawnSync(process.execPath, ['--check', join(ROOT, f)], { encoding: 'utf8' });
+		assert(r.status === 0, `${f}：${String(r.stderr).trim().slice(0, 160)}`);
+	}
 });
 
 console.log(`\n== 结果：${passed}/${passed + failures.length} 通过 ==`);

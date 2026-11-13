@@ -286,7 +286,7 @@ function main() {
 	console.log(`  入口       ${launchable}`);
 	console.log(`  SDK        ${sdkLine ? `${sdkLine[1]} / ${sdkLine[2]}` : '?'}`);
 	console.log(`  签名       ${certLine}`);
-	console.log(`  SHA-256    ${sha256}`);
+	console.log(`  文件 SHA-256 ${sha256}`);
 
 	const summary = {
 		apk: apk.replace(ROOT, '.'),

@@ -47,7 +47,11 @@ from-desktop/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
 https://github.com/10jinzhi/dsh-remote-control
 ```
 
-想钉死版本就在后面加 `#<tag>` 或 `#<commit>`，例如 `.../dsh-remote-control#v1.0.0`。
+想钉死版本就在后面加 `#<tag>` 或 `#<commit>`，例如 `.../dsh-remote-control#v1.0.1`。
+
+> ⚠️ 别钉 `#v1.0.0`：那个版本的客户端面板漏了一句 `var exports = module.exports`，
+> 装上后 web-boot 会报 `import failed: exports is not defined`，插件无法激活。
+> 1.0.1 修复了它；用默认分支或 `#v1.0.1` 都行。
 
 > ⚠️ **仓库根就是插件包**，这是刻意的：安装器把链接原样交给 `pnpm add`，
 > 只校验「装出来的那个包的根 `package.json`」有没有 `dsh.bundle.patch`，
@@ -57,7 +61,7 @@ https://github.com/10jinzhi/dsh-remote-control
 > 仓库里的 APK 源码、工具链、文档都不会被装进 DSH。
 
 手动装也行：把仓库根的 `package.json`、`cordis.patch.yml`、`lib/` 拷进插件目录，
-或者解开 `out/dsh-remote-control-desktop-1.0.0.zip`。
+或者解开 `out/dsh-remote-control-desktop-1.0.1.zip`。
 
 重启 DSH，打开 **设置 → DSH 远程控制**，填那 5 项，点 **测试往返**：
 
