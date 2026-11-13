@@ -113,7 +113,7 @@ check('GitHub 仓库链接能被安装器判成 git spec', () => {
 	// owner/repo 之后只允许 .git 与 #fragment，不允许 /tree/main/子目录。
 	const hosted = /^https?:\/\/[^/]+\/[^/]+\/[^/#]+(?:\.git)?(?:#.*)?$/i;
 	assert(hosted.test('https://github.com/10jinzhi/dsh-remote-control'), '普通仓库链接不匹配');
-	assert(hosted.test('https://github.com/10jinzhi/dsh-remote-control#v1.0.1'), '钉版本链接不匹配');
+	assert(hosted.test('https://github.com/10jinzhi/dsh-remote-control#v1.0.2'), '钉版本链接不匹配');
 	assert(!hosted.test('https://github.com/10jinzhi/dsh-remote-control/tree/main/lib'),
 		'子目录链接本应被拒（所以仓库根必须就是包）');
 });
@@ -156,9 +156,21 @@ check('客户端脚本能注册 factory，且 factory 实例化不抛异常', ()
 	assert(typeof clientRegistration.factory === 'function', '没有 factory');
 
 	const noop = () => ({});
+	// React 的 style prop 只接受对象；传 CSS 字符串会在首次渲染抛错，
+	// 被 ErrorBoundary 吞掉后整块设置节静默空白（不产生崩溃日志）。
+	// 这里把这条硬约束放进假 React，任何回退都会被这一项抓住。
+	const createElement = (type, props, ...children) => {
+		if (props !== null && typeof props === 'object' && props.style !== undefined
+			&& typeof props.style !== 'object') {
+			throw new Error(`style 必须是对象，${String(type)} 收到 ${typeof props.style}`);
+		}
+		return { type, props, children };
+	};
 	const fakeReact = {
-		createElement: noop,
-		useState: () => [null, noop],
+		createElement,
+		// 尊重初始值：组件里 useState({...}) 存的表单对象要在渲染时可读，
+		// 一律返回 null 会让 values.appKeyId 抛 TypeError。
+		useState: (init) => [typeof init === 'function' ? init() : init, noop],
 		useCallback: (fn) => fn,
 		useEffect: noop,
 	};
@@ -178,10 +190,18 @@ check('客户端脚本能注册 factory，且 factory 实例化不抛异常', ()
 
 check('apply 能注入设置页 slot 并注册面板组件', () => {
 	assert(clientRegistration !== null, '上一步没跑');
+	const noop = () => ({});
+	const createElement = (type, props, ...children) => {
+		if (props !== null && typeof props === 'object' && props.style !== undefined
+			&& typeof props.style !== 'object') {
+			throw new Error(`style 必须是对象，${String(type)} 收到 ${typeof props.style}`);
+		}
+		return { type, props, children };
+	};
 	const face = clientRegistration.factory((id) => {
-		if (id === 'react') return { createElement: () => ({}), useState: () => [null, () => {}],
-			useCallback: (fn) => fn, useEffect: () => {} };
-		if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Button: () => ({}), Pill: () => ({}) };
+		if (id === 'react') return { createElement, useState: (init) => [typeof init === 'function' ? init() : init, noop],
+			useCallback: (fn) => fn, useEffect: noop };
+		if (id === '@deepseek-ai/dsh-client-ui-primitives') return { Button: noop, Pill: noop };
 		throw new Error(`未声明的外部模块：${id}`);
 	});
 	let slot = null;
@@ -195,7 +215,27 @@ check('apply 能注入设置页 slot 并注册面板组件', () => {
 	assert(slot === 'settings.section', `注入到 ${slot}，不是设置页`);
 	assert(cell && typeof cell.Component === 'function', '没注册面板组件');
 	assert(cell.meta.label === 'DSH 远程控制', `面板标题是 ${cell.meta.label}`);
-	return slot;
+	// 真的跑一次组件函数：空白面板的成因（style 传字符串、引用未定义变量）
+	// 只有执行到这里才会暴露。
+	const tree = cell.Component({});
+	assert(tree !== null && typeof tree === 'object', '面板组件没有渲染出节点');
+	// 再往下走一层：数实际渲染出的输入框与标题文本，防「渲染了但内容是空的」。
+	const inputs = [];
+	const texts = [];
+	const walk = (node) => {
+		if (node === null || node === undefined) return;
+		if (typeof node === 'string') { texts.push(node); return; }
+		// h('div', props, [a, b]) 会把整个数组作为单个 child 传进来，
+		// React 自己会展平，这里也要跟着展平。
+		if (Array.isArray(node)) { for (const child of node) walk(child); return; }
+		if (typeof node !== 'object') return;
+		if (node.type === 'input') inputs.push(node);
+		for (const child of node.children) walk(child);
+	};
+	walk(tree);
+	assert(inputs.length === 5, `渲染出 ${inputs.length} 个输入框，应为 5 项配置`);
+	assert(texts.join('').includes('DSH 远程控制'), '面板里没有标题文本');
+	return `${slot}，根节点 ${String(tree.type)}，${inputs.length} 个输入框`;
 });
 
 check('两个入口都能被各自的运行时解析（ESM 语法检查）', () => {
