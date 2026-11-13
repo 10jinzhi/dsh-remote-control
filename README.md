@@ -5,7 +5,7 @@
 用你自己的一只私有云桶当通道，把手机变成本机 DSH 的远程终端。手机只负责连接，
 所有能力、所有数据都留在电脑上。
 
-- **电脑端**：一个 DSH 插件（`packages/dsh-remote-control-desktop`）
+- **电脑端**：一个 DSH 插件（**仓库根就是那个 bundle 包**，可用 GitHub 链接直接安装）
 - **手机端**：一个 76.7KB 的 APK（`out/dsh-remote-control-1.0.0.apk`），**只能连接电脑**，没有本机能力
 
 没有配对码、没有 Cloudflare 隧道、没有第三方服务器 —— 只有你自己的桶，
@@ -41,12 +41,23 @@ from-desktop/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
 
 ### 1. 电脑端：装插件
 
-```bash
-# 方式一：直接放进插件目录
-cp -r packages/dsh-remote-control-desktop <你的 DSH 插件目录>/
-# 方式二：用打好的 zip
-#   out/dsh-remote-control-desktop-1.0.0.zip
+**推荐：在 DSH 官方安装器里用 GitHub 链接装。** 打开 DSH → 设置 → 插件 → 添加，粘贴：
+
 ```
+https://github.com/10jinzhi/dsh-remote-control
+```
+
+想钉死版本就在后面加 `#<tag>` 或 `#<commit>`，例如 `.../dsh-remote-control#v1.0.0`。
+
+> ⚠️ **仓库根就是插件包**，这是刻意的：安装器把链接原样交给 `pnpm add`，
+> 只校验「装出来的那个包的根 `package.json`」有没有 `dsh.bundle.patch`，
+> **不会**扫描 monorepo 子目录。所以 `https://github.com/.../tree/main/某子目录`
+> 这种链接会直接被判为非法，根上少一个 `package.json` 就会报 `not-bundle`。
+> `package.json` 的 `files` 只放行 `lib/`、`cordis.patch.yml`、`README.md`，
+> 仓库里的 APK 源码、工具链、文档都不会被装进 DSH。
+
+手动装也行：把仓库根的 `package.json`、`cordis.patch.yml`、`lib/` 拷进插件目录，
+或者解开 `out/dsh-remote-control-desktop-1.0.0.zip`。
 
 重启 DSH，打开 **设置 → DSH 远程控制**，填那 5 项，点 **测试往返**：
 
@@ -104,7 +115,9 @@ adb install -r out/dsh-remote-control-1.0.0.apk
 ## 目录结构
 
 ```
-packages/dsh-remote-control-desktop/  电脑端插件（零第三方依赖）
+./                                      电脑端插件（仓库根 = bundle 包，零第三方依赖）
+  package.json                         dsh.bundle.patch + files 白名单
+  cordis.patch.yml                     insert 一行，让插件进 loader 树
   lib/index.js                         中继 + 插件入口（隧道/配对那套已整块删除）
   lib/mail7z/config.js                 5 项配置 + 通道派生 + 状态
   lib/mail7z/b2.js                     B2 Native API 客户端

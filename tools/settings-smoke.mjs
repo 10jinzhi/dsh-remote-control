@@ -116,8 +116,8 @@ async function main() {
 		process.env.DSH_REMOTE_B2_AUTH = `${stub.base}/b2api/v3/b2_authorize_account`;
 	}
 
-	const { createSettingsHandler } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/settings.js');
-	const { loadConfig, defaultCloudFile } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/config.js');
+	const { createSettingsHandler } = await import('../lib/mail7z/settings.js');
+	const { loadConfig, defaultCloudFile } = await import('../lib/mail7z/config.js');
 
 	let reloads = 0;
 	const bridge = {
@@ -228,7 +228,7 @@ async function main() {
 
 	await check('POST /unbind 清空整条通道', async () => {
 		// 先塞两个假对象，确认真的会被删
-		const { B2Client } = await import('../packages/dsh-remote-control-desktop/lib/mail7z/b2.js');
+		const { B2Client } = await import('../lib/mail7z/b2.js');
 		const cfg = loadConfig();
 		const client = new B2Client(cfg, () => {});
 		await client.put(`${cfg.channel.root}/from-phone/0000000000001.7z`, Buffer.from('junk'));

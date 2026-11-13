@@ -19,6 +19,7 @@ const forward = args.filter((a) => a === '--real');
 const skipApk = args.includes('--no-apk');
 
 const suites = [
+	{ name: 'GitHub 链接安装形态', file: 'tools/install-shape.mjs', args: [] },
 	{ name: '界面脚本冒烟', file: 'tools/ui-smoke.mjs', args: [] },
 	{ name: '电脑端设置接口', file: 'tools/settings-smoke.mjs', args: forward },
 	{ name: '传输层端到端（Node 手机模拟器）', file: 'tools/e2e.mjs', args: forward },
