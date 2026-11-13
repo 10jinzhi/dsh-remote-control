@@ -20,13 +20,15 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const APP = join(ROOT, 'android', 'app', 'src', 'main');
 const BUILD = join(ROOT, 'android', 'build');
 const OUT = join(ROOT, 'out');
+/** 发行目录：`out/` 被 .gitignore 忽略，能进仓库、能直接点开下载的只有这里。 */
+const RELEASE = join(ROOT, 'release');
 
 const AAPT2 = join(ROOT, '_toolchain', 'android-14', 'aapt2.exe');
 const D8_JAR = join(ROOT, '_toolchain', 'android-14', 'lib', 'd8.jar');
@@ -154,7 +156,9 @@ function main() {
 	const manifest = readFileSync(join(APP, 'AndroidManifest.xml'), 'utf8');
 	const versionName = /android:versionName="([^"]+)"/.exec(manifest)?.[1] ?? '0.0.0';
 	const versionCode = Number(/android:versionCode="(\d+)"/.exec(manifest)?.[1] ?? 1);
-	const apkName = `dsh-remote-control-${versionName}.apk`;
+	// 产物名带 android：和电脑端 `dsh-remote-control-desktop-<版本>.zip` 对仗，
+	// 两个发行包摆在同一个 release 目录里一眼能分出哪个是给哪端的。
+	const apkName = `dsh-remote-control-android-${versionName}.apk`;
 
 	rmSync(BUILD, { recursive: true, force: true });
 	mkdirSync(BUILD, { recursive: true });
@@ -279,8 +283,15 @@ function main() {
 	const sdkLine = /sdkVersion:'(\d+)'[\s\S]*?targetSdkVersion:'(\d+)'/.exec(badging);
 	const sha256 = createHash('sha256').update(readFileSync(apk)).digest('hex');
 
+	// 构建完顺手把这一份复制进 release/：手抄一份旧 APK 上去、和源码不一致，
+	// 是这类项目最常见的「装上去还是老行为」来源，所以不让它有第二次选择。
+	mkdirSync(RELEASE, { recursive: true });
+	const published = join(RELEASE, apkName);
+	copyFileSync(apk, published);
+
 	console.log('\n== 产物 ==');
 	console.log(`  文件       ${apk}`);
+	console.log(`  发行版     ${published.replace(ROOT, '.')}`);
 	console.log(`  大小       ${(statSync(apk).size / 1024).toFixed(1)}KB`);
 	console.log(`  包名       ${packageLine}`);
 	console.log(`  入口       ${launchable}`);
@@ -290,6 +301,7 @@ function main() {
 
 	const summary = {
 		apk: apk.replace(ROOT, '.'),
+		release: published.replace(ROOT, '.'),
 		versionName,
 		versionCode,
 		minSdk: MIN_SDK,

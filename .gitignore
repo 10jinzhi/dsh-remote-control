@@ -6,6 +6,9 @@ out/
 android/build/
 tools/out/
 *.apk
+# 唯一允许入库的二进制：release/ 下是发布用的签名 APK，给人直接点开下载。
+# 顺序有意义 —— 例外必须写在 *.apk 之后，前面忽略、后面放行。
+!release/*.apk
 *.keystore
 
 # 测试日志（每次跑都会重写，且含本机路径/主机名）

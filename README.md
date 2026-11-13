@@ -6,7 +6,8 @@
 所有能力、所有数据都留在电脑上。
 
 - **电脑端**：一个 DSH 插件（**仓库根就是那个 bundle 包**，可用 GitHub 链接直接安装）
-- **手机端**：一个 76.7KB 的 APK（`out/dsh-remote-control-1.0.0.apk`），**只能连接电脑**，没有本机能力
+- **手机端**：一个 76.7KB 的 APK（`release/dsh-remote-control-android-1.0.0.apk`，
+  已随仓库发布，点开即可下载），**只能连接电脑**，没有本机能力
 
 没有配对码、没有 Cloudflare 隧道、没有第三方服务器 —— 只有你自己的桶，
 桶里全是密文。
@@ -39,6 +40,11 @@ from-desktop/<13位序号>.7z ◄─┘   （每个对象都是 7z）      │
 > 云端文件名不是文件，是**通道的盐**，也就是「哪台电脑」的身份。
 > **两台电脑只要这一项不同，就是两条互不干扰的通道**（其余四项可以完全一样）。
 
+> 用的是**全能力 / 账号级** application key 的话，桶名**必须填**：这种 key 的
+> `b2_authorize_account` 不返回 `bucketId`，程序只能拿桶名去 `b2_list_buckets` 定位。
+> 另外它一旦泄露，整个账号下所有桶都能被读写 —— 除非你有意为之，建议还是换成
+> 限定单桶、Read and Write 的那把。
+
 ### 1. 电脑端：装插件
 
 **推荐：在 DSH 官方安装器里用 GitHub 链接装。** 打开 DSH → 设置 → 插件 → 添加，粘贴：
@@ -59,7 +65,13 @@ https://github.com/10jinzhi/dsh-remote-control
 > **不会**扫描 monorepo 子目录。所以 `https://github.com/.../tree/main/某子目录`
 > 这种链接会直接被判为非法，根上少一个 `package.json` 就会报 `not-bundle`。
 > `package.json` 的 `files` 只放行 `lib/`、`cordis.patch.yml`、`README.md`，
-> 仓库里的 APK 源码、工具链、文档都不会被装进 DSH。
+> 仓库里的 APK 源码、发行包、工具链、文档都不会被装进 DSH。
+
+> 实测过的账（`pnpm add git+ssh://…`）：pnpm 走的是
+> `codeload.github.com/<owner>/<repo>/tar.gz/<sha>`，**下载**的是整仓压缩包
+> （当前约 215KB，含 `android/`），但**落进 `node_modules` 的只有 13 个文件**、
+> 全部来自 `files` 白名单，`android/` 一个都没进去。所以仓库里带着手机端源码
+> 不会污染插件安装，代价只是每次安装多下 ~200KB。
 
 手动装也行：把仓库根的 `package.json`、`cordis.patch.yml`、`lib/` 拷进插件目录，
 或者解开 `out/dsh-remote-control-desktop-1.0.2.zip`。
@@ -78,9 +90,21 @@ https://github.com/10jinzhi/dsh-remote-control
 
 ### 2. 手机端：装 APK
 
-```bash
-adb install -r out/dsh-remote-control-1.0.0.apk
+直接下仓库里的发行版（`release/` 目录，签名后的最终包）：
+
 ```
+https://github.com/10jinzhi/dsh-remote-control/raw/main/release/dsh-remote-control-android-1.0.0.apk
+```
+
+或者用自己构建的 `out/dsh-remote-control-android-1.0.0.apk`（两者内容一致，
+`node tools/build-apk.mjs` 每次都会把产物同步进 `release/`）：
+
+```bash
+adb install -r release/dsh-remote-control-android-1.0.0.apk
+```
+
+> 别拿旧版覆盖安装：签名指纹是 `669498d0…28ef`，构建用的 keystore 一直没换，
+> 所以同签名可以直接升级；若手机上装的是别处来的包，要先卸载再装。
 
 打开应用，填**完全一样**的 5 项，点 **保存并连接**。状态灯变绿 = 已连上电脑。
 
