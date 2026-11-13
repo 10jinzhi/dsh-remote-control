@@ -6,8 +6,9 @@
 所有能力、所有数据都留在电脑上。
 
 - **电脑端**：一个 DSH 插件（**仓库根就是那个 bundle 包**，可用 GitHub 链接直接安装）
-- **手机端**：一个 76.7KB 的 APK（`release/dsh-remote-control-android-1.0.0.apk`，
-  已随仓库发布，点开即可下载），**只能连接电脑**，没有本机能力
+- **手机端**：一个 76.7KB 的 APK（GitHub Releases 附件，见
+  [移动端 v1.0.0](https://github.com/10jinzhi/dsh-remote-control/releases/tag/android-v1.0.0)），
+  **只能连接电脑**，没有本机能力
 
 没有配对码、没有 Cloudflare 隧道、没有第三方服务器 —— 只有你自己的桶，
 桶里全是密文。
@@ -65,7 +66,7 @@ https://github.com/10jinzhi/dsh-remote-control
 > **不会**扫描 monorepo 子目录。所以 `https://github.com/.../tree/main/某子目录`
 > 这种链接会直接被判为非法，根上少一个 `package.json` 就会报 `not-bundle`。
 > `package.json` 的 `files` 只放行 `lib/`、`cordis.patch.yml`、`README.md`，
-> 仓库里的 APK 源码、发行包、工具链、文档都不会被装进 DSH。
+> 仓库里的 APK 源码、工具链、文档都不会被装进 DSH。
 
 > 实测过的账（`pnpm add git+ssh://…`）：pnpm 走的是
 > `codeload.github.com/<owner>/<repo>/tar.gz/<sha>`，**下载**的是整仓压缩包
@@ -90,18 +91,24 @@ https://github.com/10jinzhi/dsh-remote-control
 
 ### 2. 手机端：装 APK
 
-直接下仓库里的发行版（`release/` 目录，签名后的最终包）：
+从 **Releases** 下载（仓库里不再放二进制，见下）：
 
 ```
-https://github.com/10jinzhi/dsh-remote-control/raw/main/release/dsh-remote-control-android-1.0.0.apk
+https://github.com/10jinzhi/dsh-remote-control/releases/tag/android-v1.0.0
 ```
 
-或者用自己构建的 `out/dsh-remote-control-android-1.0.0.apk`（两者内容一致，
-`node tools/build-apk.mjs` 每次都会把产物同步进 `release/`）：
+直链：`.../releases/download/android-v1.0.0/dsh-remote-control-android-1.0.0.apk`
+
+自己构建出来的在 `out/dsh-remote-control-android-1.0.0.apk`，内容与 Releases 里的一致
+（同一份 `build-apk` 产物，发布只是把它当附件传上去）：
 
 ```bash
-adb install -r release/dsh-remote-control-android-1.0.0.apk
+adb install -r out/dsh-remote-control-android-1.0.0.apk
 ```
+
+> 二进制不进仓库，是为了让 `pnpm add` 拉下来的 tarball 里没有 APK（少 78KB），
+> 也避免「库里一份、Releases 一份」迟早不一致。发布用
+> `GITHUB_TOKEN=… node tools/publish-release.mjs --tag android-v1.0.0 --apk <apk> --notes docs/发布说明-移动端.md`。
 
 > 别拿旧版覆盖安装：签名指纹是 `669498d0…28ef`，构建用的 keystore 一直没换，
 > 所以同签名可以直接升级；若手机上装的是别处来的包，要先卸载再装。

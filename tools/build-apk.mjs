@@ -20,15 +20,13 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const APP = join(ROOT, 'android', 'app', 'src', 'main');
 const BUILD = join(ROOT, 'android', 'build');
 const OUT = join(ROOT, 'out');
-/** 发行目录：`out/` 被 .gitignore 忽略，能进仓库、能直接点开下载的只有这里。 */
-const RELEASE = join(ROOT, 'release');
 
 const AAPT2 = join(ROOT, '_toolchain', 'android-14', 'aapt2.exe');
 const D8_JAR = join(ROOT, '_toolchain', 'android-14', 'lib', 'd8.jar');
@@ -283,25 +281,21 @@ function main() {
 	const sdkLine = /sdkVersion:'(\d+)'[\s\S]*?targetSdkVersion:'(\d+)'/.exec(badging);
 	const sha256 = createHash('sha256').update(readFileSync(apk)).digest('hex');
 
-	// 构建完顺手把这一份复制进 release/：手抄一份旧 APK 上去、和源码不一致，
-	// 是这类项目最常见的「装上去还是老行为」来源，所以不让它有第二次选择。
-	mkdirSync(RELEASE, { recursive: true });
-	const published = join(RELEASE, apkName);
-	copyFileSync(apk, published);
-
 	console.log('\n== 产物 ==');
 	console.log(`  文件       ${apk}`);
-	console.log(`  发行版     ${published.replace(ROOT, '.')}`);
 	console.log(`  大小       ${(statSync(apk).size / 1024).toFixed(1)}KB`);
 	console.log(`  包名       ${packageLine}`);
 	console.log(`  入口       ${launchable}`);
 	console.log(`  SDK        ${sdkLine ? `${sdkLine[1]} / ${sdkLine[2]}` : '?'}`);
 	console.log(`  签名       ${certLine}`);
 	console.log(`  文件 SHA-256 ${sha256}`);
+	// 二进制不进仓库（会跟着 pnpm 的 tarball 一起被下载，且两份必然漂移），
+	// 发布走 Releases，所以这里直接把命令打出来，省得每次去翻文档。
+	console.log(`\n  发布到 Releases：`);
+	console.log(`    GITHUB_TOKEN=… node tools/publish-release.mjs --tag android-v${versionName} --apk out/${apkName} --notes docs/发布说明-移动端.md`);
 
 	const summary = {
 		apk: apk.replace(ROOT, '.'),
-		release: published.replace(ROOT, '.'),
 		versionName,
 		versionCode,
 		minSdk: MIN_SDK,
